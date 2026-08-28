@@ -89,8 +89,10 @@ class HrEmployee(models.Model):
         self.ensure_one()
         if self.loan_service_date:
             return self.loan_service_date
-        if 'first_contract_date' in self._fields and self.first_contract_date:
-            return self.first_contract_date
+        # sudo(): first_contract_date is a manager-only compute over hr.contract,
+        # which an HR officer without the Contracts group cannot read.
+        if 'first_contract_date' in self._fields and self.sudo().first_contract_date:
+            return self.sudo().first_contract_date
         if self.create_date:
             return fields.Date.to_date(self.create_date)
         return False
@@ -106,7 +108,9 @@ class HrEmployee(models.Model):
         version move -- which would waive the handbook's section 4 limit.
         """
         self.ensure_one()
-        contract = getattr(self, 'contract_id', None)
+        # sudo(): hr.contract is readable only by the Contracts groups; an HR
+        # officer without them must still see the ceiling on the employee form.
+        contract = getattr(self.sudo(), 'contract_id', None)
         if contract and contract.wage:
             return float(contract.wage)
         return float(getattr(self, 'wage', 0.0) or 0.0)
