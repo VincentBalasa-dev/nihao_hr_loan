@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        Payroll's own Help tab already lists the variables a salary rule can
+        use. The loan fields are only reachable because this addon is
+        installed, so they are documented in the same place rather than in a
+        file nobody has open while writing a formula.
+
+        Appended to the existing page rather than added as a new tab: someone
+        writing a rule looks in Help, and a second tab on every salary rule
+        form would be noise for rules that have nothing to do with loans.
+    -->
+    <record id="view_hr_salary_rule_form_loan_help" model="ir.ui.view">
+        <field name="name">hr.salary.rule.form.loan.help</field>
+        <field name="model">hr.salary.rule</field>
+        <field name="inherit_id" ref="payroll.hr_salary_rule_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//page[@name='help']" position="inside">
+                <div style="margin-top: 24px; border-top: 1px solid #dee2e6; padding-top: 16px;">
+                    <h3>Employee loans (nihao_hr_loan)</h3>
+                    <p>
+                        <code>employee</code> is a real <code>hr.employee</code>
+                        record, so everything the Loans app adds to it is
+                        available here. Every expression below was checked
+                        against a real payslip.
+                    </p>
+
+                    <h4>What to deduct for this payslip</h4>
+                    <p>
+                        This is what the <code>DED_LOAN</code> rule uses. It
+                        counts the actual days the payslip covers, so a 31-day
+                        cutoff takes slightly more than a 30-day one.
+                    </p>
+                    <pre class="bg-light p-2">result = -employee._loan_deduction_total(payslip.date_from, payslip.date_to)</pre>
+                    <div class="alert alert-warning" role="alert">
+                        <strong>Always pass the two dates.</strong> Called with
+                        no arguments the method assumes <strong>one week</strong>,
+                        so a monthly payslip would deduct roughly a quarter of
+                        what is due. And keep the result
+                        <strong>negative</strong> — deductions are stored as
+                        negative totals and summed into the Deduction category.
+                    </div>
+
+                    <h4>Fields on the employee</h4>
+                    <ul>
+                        <li><code>employee.loan_balance</code> — total still owed across active loans</li>
+                        <li><code>employee.loan_cutoff_deduction</code> — the one-week figure, for display</li>
+                        <li><code>employee.loan_active_count</code> — how many loans are being repaid</li>
+                        <li><code>employee.loan_unauthorized_count</code> — active loans with no signed authorization, which deduct nothing</li>
+                        <li><code>employee.loan_max_amount</code> — the configured ceiling at this length of service</li>
+                        <li><code>employee.loan_service_years</code> — continuous service</li>
+                        <li><code>employee.loan_ids</code> — the loan records themselves</li>
+                    </ul>
+
+                    <h4>Reaching the loans directly</h4>
+                    <pre class="bg-light p-2">result = -sum(l.repayment_amount for l in employee.loan_ids
+              if l.state == 'active' and l.deduction_authorized)</pre>
+                    <p>
+                        Useful fields on each loan: <code>amount</code>,
+                        <code>balance</code>, <code>total_paid</code>,
+                        <code>total_payable</code>,
+                        <code>repayment_amount</code>,
+                        <code>monthly_amortization</code>,
+                        <code>interest_amount</code>, <code>state</code>,
+                        <code>deduction_authorized</code>,
+                        <code>start_date</code>, <code>loan_type_id</code>.
+                    </p>
+
+                    <h4>A per-loan breakdown</h4>
+                    <p>
+                        Returns <code>(loan, amount due this period)</code>
+                        pairs, oldest first, already filtered for
+                        authorization, start date and remaining balance.
+                    </p>
+                    <pre class="bg-light p-2">rows = employee._loan_deductions(payslip.date_from, payslip.date_to)
+result = -sum(a for _l, a in rows)</pre>
+
+                    <h4>Mixing with payroll's own values</h4>
+                    <pre class="bg-light p-2">due = employee._loan_deduction_total(payslip.date_from, payslip.date_to)
+result = -min(due, categories.BASIC * 0.20)   # never take more than 20% of basic</pre>
+
+                    <h4>Renaming the line</h4>
+                    <pre class="bg-light p-2">result_name = 'Loan Repayment (%d active)' % employee.loan_active_count
+result = -employee._loan_deduction_total(payslip.date_from, payslip.date_to)</pre>
+
+                    <div class="alert alert-danger" role="alert">
+                        <strong>Do not create records from a rule.</strong>
+                        Odoo blocks it, and it would be wrong anyway:
+                        <code>compute_sheet()</code> runs again every time
+                        anyone recomputes a draft payslip, so you would post a
+                        duplicate repayment on each recompute. Repayments are
+                        posted once, when the payslip is confirmed, stamped
+                        with its number so re-confirming cannot double-credit,
+                        and reversed if it goes back to draft.
+                    </div>
+
+                    <div class="alert alert-info" role="alert">
+                        If you change the <code>DED_LOAN</code> formula so it no
+                        longer matches <code>_loan_deductions()</code>, the
+                        repayment allocator will log
+                        <em>"N unaccounted for"</em> rather than mis-credit a
+                        loan. Check the log after a payroll run.
+                    </div>
+                </div>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

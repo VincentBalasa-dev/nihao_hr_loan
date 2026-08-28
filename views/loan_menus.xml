@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Loans is its own application: a root menu with an icon, so it appears
+        as a tile in the app switcher and installs from Apps like any other app.
+
+        The root is open to every internal user, because an employee has to be
+        able to reach "My Loans" to file one. Everything an employee has no
+        business seeing carries its own group; the root's groups do NOT
+        cascade to children in Odoo, so each item states its own audience.
+
+        Record rules do the real work: an employee sees only their own loans
+        whichever action they open. The domain on "My Loans" is belt and
+        braces, and makes the intent readable.
+    -->
+
+    <menuitem id="menu_loan_root"
+              name="Loans"
+              sequence="86"
+              web_icon="nihao_hr_loan,static/description/icon.png"
+              groups="base.group_user"/>
+
+    <!-- ── What every employee sees ─────────────────────────────────────── -->
+    <menuitem id="menu_my_loans"
+              name="My Loans"
+              parent="menu_loan_root"
+              action="action_my_loans"
+              sequence="5"
+              groups="base.group_user"/>
+
+    <!-- ── HR only ──────────────────────────────────────────────────────── -->
+    <menuitem id="menu_loan_applications"
+              name="Loan Applications"
+              parent="menu_loan_root"
+              action="action_efs_loan"
+              sequence="10"
+              groups="hr.group_hr_user"/>
+
+    <menuitem id="menu_loan_to_approve"
+              name="To Approve"
+              parent="menu_loan_root"
+              action="action_efs_loan_to_approve"
+              sequence="20"
+              groups="hr.group_hr_user"/>
+
+    <menuitem id="menu_loan_payments"
+              name="Repayments"
+              parent="menu_loan_root"
+              action="action_efs_loan_payment"
+              sequence="30"
+              groups="hr.group_hr_user"/>
+
+    <!--
+        Configuration is administrator-only: an interest rate and an eligibility
+        band are commercial decisions, not day-to-day HR work, and the ACLs on
+        efs.loan.type and efs.loan.eligibility.tier match.
+    -->
+    <menuitem id="menu_loan_config"
+              name="Configuration"
+              parent="menu_loan_root"
+              sequence="90"
+              groups="hr.group_hr_manager"/>
+
+    <menuitem id="menu_loan_settings"
+              name="Settings"
+              parent="menu_loan_config"
+              action="action_loan_config_settings"
+              sequence="5"/>
+
+    <menuitem id="menu_loan_type"
+              name="Loan Products"
+              parent="menu_loan_config"
+              action="action_efs_loan_type"
+              sequence="10"/>
+
+    <menuitem id="menu_loan_tier"
+              name="Eligibility Bands"
+              parent="menu_loan_config"
+              action="action_loan_eligibility_tier"
+              sequence="20"/>
+
+</odoo>

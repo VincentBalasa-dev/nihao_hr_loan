@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Starting bands. `noupdate="1"` so an upgrade never overwrites a
+        threshold somebody set — HR owns these from
+        Loans -> Configuration -> Eligibility Bands once created.
+
+        Delete them all and nobody may borrow, which is the safe default for a
+        deployment that has not decided its policy yet.
+    -->
+    <data noupdate="1">
+        <record id="loan_tier_1_year" model="efs.loan.eligibility.tier">
+            <field name="min_service_years">1.0</field>
+            <field name="salary_multiple">0.5</field>
+            <field name="company_id" eval="False"/>
+        </record>
+        <record id="loan_tier_3_years" model="efs.loan.eligibility.tier">
+            <field name="min_service_years">3.0</field>
+            <field name="salary_multiple">1.0</field>
+            <field name="company_id" eval="False"/>
+        </record>
+        <record id="loan_tier_5_years" model="efs.loan.eligibility.tier">
+            <field name="min_service_years">5.0</field>
+            <field name="salary_multiple">2.0</field>
+            <field name="company_id" eval="False"/>
+        </record>
+    </data>
+</odoo>

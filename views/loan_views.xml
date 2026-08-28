@@ -1,0 +1,568 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ── Loan: list ────────────────────────────────────────────────────── -->
+    <record id="view_efs_loan_list" model="ir.ui.view">
+        <field name="name">efs.loan.list</field>
+        <field name="model">efs.loan</field>
+        <field name="arch" type="xml">
+            <list string="Loans"
+                  decoration-success="state == 'paid'"
+                  decoration-info="state == 'active'"
+                  decoration-warning="state in ('pending', 'endorsed')"
+                  decoration-danger="state == 'rejected'"
+                  decoration-muted="state == 'cancelled'">
+                <field name="name"/>
+                <field name="borrower_name" string="Borrower"/>
+                <field name="borrower_type" optional="hide"/>
+                <field name="employee_id" optional="hide"/>
+                <field name="partner_id" optional="hide"/>
+                <field name="loan_type_id"/>
+                <field name="amount" sum="Total Principal"/>
+                <field name="total_payable" optional="hide" sum="Total Payable"/>
+                <field name="repayment_amount" optional="hide"/>
+                <field name="repayment_period" optional="hide"/>
+                <field name="monthly_amortization" optional="show"/>
+                <field name="total_paid" optional="hide" sum="Total Repaid"/>
+                <field name="balance" sum="Total Outstanding"/>
+                <field name="term_months" optional="show"/>
+                <field name="start_date"/>
+                <!--
+                    Two columns that explain a loan misbehaving. Authorized:
+                    an active, unauthorised employee loan is the failure mode
+                    that otherwise goes unnoticed for a whole payroll run.
+                    Policy OK: in advise mode, an application that broke a
+                    rule and was accepted anyway.
+                -->
+                <field name="deduction_authorized" string="Authorized"
+                       optional="show" widget="boolean_toggle" readonly="1"
+                       invisible="borrower_type != 'employee'"/>
+                <field name="policy_ok" string="Policy OK" optional="show"
+                       widget="boolean_toggle" readonly="1"/>
+                <field name="policy_warnings" optional="hide"/>
+                <field name="company_id" column_invisible="1"/>
+                <field name="currency_id" column_invisible="1"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'paid'"
+                       decoration-info="state == 'active'"
+                       decoration-warning="state in ('pending', 'endorsed')"
+                       decoration-danger="state == 'rejected'"
+                       decoration-muted="state == 'cancelled'"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ── Loan: form ────────────────────────────────────────────────────── -->
+    <record id="view_efs_loan_form" model="ir.ui.view">
+        <field name="name">efs.loan.form</field>
+        <field name="model">efs.loan</field>
+        <field name="arch" type="xml">
+            <form string="Loan">
+                <header>
+                    <!-- Level 1: HR endorses. -->
+                    <button name="action_endorse" string="Endorse" type="object"
+                            class="oe_highlight"
+                            invisible="state != 'pending'"
+                            groups="hr.group_hr_user"/>
+                    <!--
+                        Level 2: the administrator approves, which activates
+                        the loan. Offered on a pending record too, as the
+                        documented escape hatch for HR being unavailable; the
+                        record stores that as an override.
+                    -->
+                    <button name="action_approve" string="Approve" type="object"
+                            class="oe_highlight"
+                            invisible="state not in ('pending', 'endorsed')"
+                            groups="hr.group_hr_manager"/>
+                    <button name="action_open_reject_wizard" string="Reject"
+                            type="object"
+                            invisible="state not in ('pending', 'endorsed')"
+                            groups="hr.group_hr_user"/>
+                    <button name="action_cancel" string="Cancel" type="object"
+                            invisible="state not in ('pending', 'endorsed')"/>
+
+                    <!--
+                        A running loan cannot just be cancelled: money has moved
+                        and payroll is deducting. It goes back through the same
+                        two levels that approved it.
+                    -->
+                    <button name="action_open_cancel_wizard" type="object"
+                            string="Request Cancellation"
+                            invisible="state != 'active'"/>
+                    <button name="action_endorse_cancellation" type="object"
+                            string="Endorse Cancellation" class="oe_highlight"
+                            invisible="state != 'cancel_requested' or cancel_endorsed_by"
+                            groups="hr.group_hr_user"/>
+                    <button name="action_approve_cancellation" type="object"
+                            string="Approve Cancellation" class="oe_highlight"
+                            invisible="state != 'cancel_requested' or not cancel_endorsed_by"
+                            groups="hr.group_hr_manager"
+                            confirm="This closes the loan and stops the payroll deduction. Repayments already made are not reversed, and any outstanding balance is recorded but no longer collected. Continue?"/>
+                    <button name="action_refuse_cancellation" type="object"
+                            string="Refuse Cancellation"
+                            invisible="state != 'cancel_requested'"
+                            groups="hr.group_hr_user"/>
+
+                    <!-- Handbook section 6 / Labor Code art. 113. Employees only. -->
+                    <button name="action_record_authorization" type="object"
+                            string="Record Authorization" class="oe_highlight"
+                            invisible="state != 'active' or deduction_authorized or borrower_type != 'employee'"
+                            groups="hr.group_hr_user"
+                            confirm="Confirm that a signed Salary Deduction Authorization for this loan is on file. Payroll will start deducting from the next run."/>
+                    <button name="action_withdraw_authorization" type="object"
+                            string="Withdraw Authorization"
+                            invisible="not deduction_authorized"
+                            groups="hr.group_hr_manager"
+                            confirm="Payroll will stop deducting for this loan from the next run. Continue?"/>
+
+                    <button name="action_reset_to_pending" string="Reset to Draft"
+                            type="object"
+                            invisible="state not in ('rejected', 'cancelled')"
+                            groups="hr.group_hr_manager"/>
+
+                    <!--
+                        Clickable, but a click does NOT set the field: the
+                        model's write() turns a bare `state` write into the
+                        matching action, so clicking "Endorsed" runs
+                        action_endorse and clicking "Active" runs
+                        action_approve, with all the group and
+                        separation-of-duties checks they carry. Clicking
+                        "Fully Paid" is refused with an explanation, because
+                        that one follows from the repayments.
+                    -->
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="pending,endorsed,active,cancel_requested,paid"
+                           options="{'clickable': '1'}"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_open_payments" type="object"
+                                class="oe_stat_button" icon="fa-money">
+                            <field name="payment_count" widget="statinfo"
+                                   string="Repayments"/>
+                        </button>
+                    </div>
+
+                    <widget name="web_ribbon" title="Fully Paid"
+                            bg_color="text-bg-success"
+                            invisible="state != 'paid'"/>
+                    <widget name="web_ribbon" title="Rejected"
+                            bg_color="text-bg-danger"
+                            invisible="state != 'rejected'"/>
+
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+
+                    <!--
+                        What the lending rules say, when the client runs them
+                        in advise mode. In enforce mode a failing application
+                        never gets this far, so the banner only ever appears
+                        for a loan HR is meant to look at and decide on.
+                    -->
+                    <div class="alert alert-warning" role="alert"
+                         invisible="not policy_warnings">
+                        <strong>This application breaks the lending policy.</strong>
+                        It was accepted because policy enforcement is set to
+                        Advise. Approving it is a management decision and will
+                        be recorded as such.
+                        <field name="policy_warnings" readonly="1" nolabel="1"
+                               class="mt-2"/>
+                    </div>
+
+                    <!--
+                        The single most important thing this form can say for
+                        an employee loan. An active loan with no authorization
+                        looks completely healthy and deducts nothing, so it is
+                        stated in words rather than left to a checkbox someone
+                        has to notice.
+                    -->
+                    <div class="alert alert-warning" role="alert"
+                         invisible="state != 'active' or deduction_authorized or borrower_type != 'employee'">
+                        No Salary Deduction Authorization is on file, so
+                        <strong>payroll will deduct nothing</strong> for this
+                        loan. Labor Code article 113 forbids a wage deduction
+                        without the employee's written authorization — record
+                        it above once the form is signed.
+                    </div>
+
+                    <group>
+                        <group string="Application">
+                            <field name="external_allowed" invisible="1"/>
+                            <!--
+                                The External option exists only where the
+                                client has switched external borrowers on;
+                                everyone else never sees the choice.
+                            -->
+                            <field name="borrower_type" widget="radio"
+                                   options="{'horizontal': true}"
+                                   invisible="not external_allowed and borrower_type == 'employee'"
+                                   readonly="state not in ('pending', 'endorsed')"/>
+                            <field name="employee_id"
+                                   invisible="borrower_type != 'employee'"
+                                   required="borrower_type == 'employee'"
+                                   readonly="state not in ('pending', 'endorsed')"/>
+                            <field name="partner_id"
+                                   invisible="borrower_type != 'partner'"
+                                   required="borrower_type == 'partner'"
+                                   readonly="state not in ('pending', 'endorsed')"/>
+                            <field name="loan_type_id"
+                                   readonly="state not in ('pending', 'endorsed')"/>
+                            <field name="purpose"
+                                   readonly="state not in ('pending', 'endorsed')"/>
+                            <field name="company_id" invisible="1"/>
+                            <field name="currency_id" invisible="1"/>
+                        </group>
+                        <group string="Terms">
+                            <field name="amount"
+                                   readonly="state not in ('pending', 'endorsed')"/>
+                            <field name="repayment_basis"
+                                   readonly="state not in ('pending', 'endorsed')"/>
+                            <field name="repayment_period"
+                                   readonly="state not in ('pending', 'endorsed')"/>
+                            <field name="repayment_percent"
+                                   invisible="repayment_basis != 'percent'"
+                                   required="repayment_basis == 'percent'"
+                                   readonly="state not in ('pending', 'endorsed')"/>
+                            <!--
+                                Editable on a fixed basis (the handbook lets an
+                                employee ask for more); computed from the
+                                principal on a percent basis.
+                            -->
+                            <field name="repayment_amount"
+                                   readonly="repayment_basis == 'percent' or state not in ('pending', 'endorsed')"/>
+                            <field name="interest_amount" readonly="1"
+                                   invisible="interest_amount == 0"/>
+                            <field name="total_payable" readonly="1"/>
+                            <field name="monthly_amortization" readonly="1"/>
+                            <field name="term_periods" readonly="1"/>
+                            <field name="term_months" readonly="1"/>
+                            <field name="start_date"
+                                   readonly="state in ('paid', 'rejected', 'cancelled')"/>
+                        </group>
+                    </group>
+
+                    <group string="Repayment" invisible="state in ('pending', 'endorsed', 'rejected', 'cancelled')">
+                        <group>
+                            <field name="total_paid" readonly="1"/>
+                            <field name="balance" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="paid_percentage" widget="progressbar"
+                                   readonly="1"/>
+                        </group>
+                    </group>
+
+                    <group string="Salary Deduction Authorization"
+                           invisible="borrower_type != 'employee' or state in ('pending', 'endorsed', 'rejected', 'cancelled')">
+                        <field name="deduction_authorized" readonly="1"/>
+                        <field name="authorized_by" readonly="1"
+                               invisible="not deduction_authorized"/>
+                        <field name="authorized_date" readonly="1"
+                               invisible="not deduction_authorized"/>
+                    </group>
+
+                    <group string="Cancellation"
+                           invisible="state != 'cancel_requested' and not cancel_requested_by">
+                        <group>
+                            <field name="cancel_requested_by" readonly="1"/>
+                            <field name="cancel_requested_date" readonly="1"/>
+                            <field name="cancel_reason" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="cancel_endorsed_by" readonly="1"
+                                   invisible="not cancel_endorsed_by"/>
+                            <field name="cancel_endorsed_date" readonly="1"
+                                   invisible="not cancel_endorsed_by"/>
+                            <field name="cancelled_balance" readonly="1"
+                                   invisible="state != 'cancelled'"/>
+                        </group>
+                    </group>
+                    <group string="Decision" invisible="state == 'pending'">
+                        <group>
+                            <field name="endorsed_by" readonly="1"
+                                   invisible="not endorsed_by"/>
+                            <field name="endorsed_date" readonly="1"
+                                   invisible="not endorsed_by"/>
+                            <field name="approved_by" readonly="1"
+                                   invisible="not approved_by"/>
+                            <field name="approved_date" readonly="1"
+                                   invisible="not approved_by"/>
+                            <!--
+                                Shown only when true, and shown at all because
+                                an audit trail that quietly loses the
+                                distinction is worse than no audit trail.
+                            -->
+                            <field name="approval_override" readonly="1"
+                                   invisible="not approval_override"/>
+                        </group>
+                        <group invisible="state != 'rejected'">
+                            <field name="rejected_by" readonly="1"/>
+                            <field name="rejected_stage" readonly="1"/>
+                            <field name="rejected_date" readonly="1"/>
+                            <field name="rejection_reason" readonly="1"/>
+                        </group>
+                    </group>
+
+                    <notebook>
+                        <page string="Repayments" name="payments">
+                            <field name="payment_ids" readonly="state in ('pending', 'endorsed', 'rejected', 'cancelled')">
+                                <list editable="bottom">
+                                    <field name="date"/>
+                                    <field name="amount"/>
+                                    <field name="payment_method"/>
+                                    <field name="reference"/>
+                                    <field name="state"/>
+                                    <field name="currency_id" column_invisible="1"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- ── Loan: search ──────────────────────────────────────────────────── -->
+    <record id="view_efs_loan_search" model="ir.ui.view">
+        <field name="name">efs.loan.search</field>
+        <field name="model">efs.loan</field>
+        <field name="arch" type="xml">
+            <search string="Loans">
+                <field name="name"/>
+                <field name="borrower_name" string="Borrower"/>
+                <field name="employee_id"/>
+                <field name="partner_id"/>
+                <field name="loan_type_id"/>
+                <field name="purpose"/>
+                <!--
+                    Filter names share a namespace with field names inside a
+                    search view, so every filter here carries a prefix.
+                -->
+                <filter name="filter_pending" string="Pending HR"
+                        domain="[('state', '=', 'pending')]"/>
+                <filter name="filter_endorsed" string="Awaiting Approval"
+                        domain="[('state', '=', 'endorsed')]"/>
+                <filter name="filter_active" string="Active"
+                        domain="[('state', '=', 'active')]"/>
+                <filter name="filter_paid" string="Fully Paid"
+                        domain="[('state', '=', 'paid')]"/>
+                <separator name="separator_borrower"/>
+                <filter name="filter_employees" string="Employee Loans"
+                        domain="[('borrower_type', '=', 'employee')]"/>
+                <filter name="filter_external" string="External Borrowers"
+                        domain="[('borrower_type', '=', 'partner')]"/>
+                <separator name="separator_attention"/>
+                <!--
+                    The two queues that matter operationally: approved but
+                    deducting nothing, and accepted despite the rules.
+                -->
+                <filter name="filter_unauthorized"
+                        string="Active without Authorization"
+                        domain="[('state', '=', 'active'), ('borrower_type', '=', 'employee'), ('deduction_authorized', '=', False)]"/>
+                <filter name="filter_policy_issues" string="Policy Issues"
+                        domain="[('policy_ok', '=', False)]"/>
+                <filter name="filter_outstanding" string="Has Balance"
+                        domain="[('balance', '&gt;', 0)]"/>
+                <separator name="separator_dates"/>
+                <filter name="filter_started" string="Repayment Started"
+                        domain="[('start_date', '&lt;=', context_today().strftime('%Y-%m-%d'))]"/>
+                <group>
+                    <filter name="group_by_borrower_type" string="Borrower Type"
+                            domain="[]" context="{'group_by': 'borrower_type'}"/>
+                    <filter name="group_by_employee" string="Employee"
+                            domain="[]" context="{'group_by': 'employee_id'}"/>
+                    <filter name="group_by_partner" string="Contact"
+                            domain="[]" context="{'group_by': 'partner_id'}"/>
+                    <filter name="group_by_type" string="Loan Product"
+                            domain="[]" context="{'group_by': 'loan_type_id'}"/>
+                    <filter name="group_by_state" string="Status"
+                            domain="[]" context="{'group_by': 'state'}"/>
+                    <filter name="group_by_start" string="Start Date"
+                            domain="[]" context="{'group_by': 'start_date'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- ── Loan: actions ─────────────────────────────────────────────────── -->
+    <record id="action_efs_loan" model="ir.actions.act_window">
+        <field name="name">Loan Applications</field>
+        <field name="res_model">efs.loan</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_efs_loan_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No loans recorded yet
+            </p>
+            <p>
+                An application is endorsed by HR, approved by an administrator,
+                and — for an employee — starts deducting once the signed Salary
+                Deduction Authorization is recorded against it.
+            </p>
+        </field>
+    </record>
+
+    <record id="action_efs_loan_to_approve" model="ir.actions.act_window">
+        <field name="name">To Approve</field>
+        <field name="res_model">efs.loan</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_efs_loan_search"/>
+        <field name="domain">[('state', 'in', ('pending', 'endorsed'))]</field>
+        <field name="context">{'search_default_group_by_state': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Nothing waiting on a decision</p>
+            <p>Applications HR has yet to endorse, and endorsed ones waiting on an administrator.</p>
+        </field>
+    </record>
+
+    <!--
+        What an ordinary user sees: their own loans, whether they are the
+        employee or the contact behind an external loan. The record rules
+        already restrict them; stating the domain here makes the intent
+        readable and survives a rule being edited.
+    -->
+    <record id="action_my_loans" model="ir.actions.act_window">
+        <field name="name">My Loans</field>
+        <field name="res_model">efs.loan</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">['|', ('employee_id.user_id', '=', uid), ('partner_id.user_ids', 'in', [uid])]</field>
+        <field name="context">{'search_default_group_by_state': 0}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">You have no loans yet</p>
+            <p>
+                File an application here. HR reviews it first, then an
+                administrator decides.
+            </p>
+        </field>
+    </record>
+
+    <!-- ── Loan repayments ───────────────────────────────────────────────── -->
+    <!--
+        The standalone list opens a form on click. Inline editing is kept only
+        on the loan's own Repayments tab, where the loan is already in view;
+        on the ledger it made a mis-typed row impossible to escape from.
+    -->
+    <record id="view_efs_loan_payment_form" model="ir.ui.view">
+        <field name="name">efs.loan.payment.form</field>
+        <field name="model">efs.loan.payment</field>
+        <field name="arch" type="xml">
+            <form string="Loan Repayment">
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_open_loan" type="object"
+                                class="oe_stat_button" icon="fa-file-text-o"
+                                string="Open Loan"/>
+                    </div>
+                    <!--
+                        The title is the record's name, which the model builds
+                        as "LOAN/... · date · amount". The amount itself sits
+                        in the group below where the monetary widget renders in
+                        full; inside an <h1> it was being clipped.
+                    -->
+                    <div class="oe_title">
+                        <h1><field name="display_name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group string="Repayment">
+                            <field name="amount"/>
+                            <field name="date"/>
+                            <field name="loan_id"/>
+                            <field name="borrower_name"/>
+                            <field name="payment_method"/>
+                            <field name="payslip_id"
+                                   invisible="payment_method != 'payroll' and not payslip_id"/>
+                            <field name="reference"/>
+                            <field name="state"/>
+                            <field name="currency_id" invisible="1"/>
+                            <field name="company_id" invisible="1"/>
+                        </group>
+                        <group string="Loan Standing">
+                            <field name="loan_amount"/>
+                            <field name="loan_total_paid"/>
+                            <field name="loan_balance"/>
+                            <field name="loan_state"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_efs_loan_payment_list" model="ir.ui.view">
+        <field name="name">efs.loan.payment.list</field>
+        <field name="model">efs.loan.payment</field>
+        <field name="arch" type="xml">
+            <list string="Loan Repayments"
+                  decoration-muted="state == 'draft'">
+                <field name="date"/>
+                <field name="loan_id"/>
+                <field name="borrower_name" string="Borrower"/>
+                <field name="employee_id" optional="hide"/>
+                <field name="partner_id" optional="hide"/>
+                <field name="amount" sum="Total"/>
+                <field name="payment_method" optional="show"/>
+                <!--
+                    The payslip as a real, clickable link. Filled by payroll;
+                    empty for a cash or bonus repayment. `reference` stays
+                    beside it as the durable text stamp.
+                -->
+                <field name="payslip_id" optional="show"/>
+                <field name="reference"/>
+                <field name="state"/>
+                <field name="company_id" column_invisible="1"/>
+                <field name="currency_id" column_invisible="1"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_efs_loan_payment_search" model="ir.ui.view">
+        <field name="name">efs.loan.payment.search</field>
+        <field name="model">efs.loan.payment</field>
+        <field name="arch" type="xml">
+            <search string="Loan Repayments">
+                <field name="loan_id"/>
+                <field name="borrower_name" string="Borrower"/>
+                <field name="employee_id"/>
+                <field name="partner_id"/>
+                <field name="reference"/>
+                <field name="payment_method"/>
+                <filter name="filter_posted" string="Posted"
+                        domain="[('state', '=', 'posted')]"/>
+                <filter name="filter_draft" string="Draft"
+                        domain="[('state', '=', 'draft')]"/>
+                <separator/>
+                <filter name="filter_payroll" string="From Payroll"
+                        domain="[('payment_method', '=', 'payroll')]"/>
+                <filter name="filter_manual" string="Entered by Hand"
+                        domain="[('payment_method', '!=', 'payroll')]"/>
+                <group>
+                    <filter name="group_by_method" string="Method"
+                            domain="[]" context="{'group_by': 'payment_method'}"/>
+                    <filter name="group_by_borrower" string="Borrower"
+                            domain="[]" context="{'group_by': 'borrower_name'}"/>
+                    <filter name="group_by_loan" string="Loan"
+                            domain="[]" context="{'group_by': 'loan_id'}"/>
+                    <filter name="group_by_date" string="Payment Date"
+                            domain="[]" context="{'group_by': 'date'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_efs_loan_payment" model="ir.actions.act_window">
+        <field name="name">Loan Repayments</field>
+        <field name="res_model">efs.loan.payment</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_efs_loan_payment_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No repayments yet</p>
+            <p>
+                Confirming a payslip posts a repayment for what it deducted.
+                Repayments added by hand here count the same way.
+            </p>
+        </field>
+    </record>
+
+</odoo>

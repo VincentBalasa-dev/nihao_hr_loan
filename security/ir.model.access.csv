@@ -1,0 +1,13 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_efs_loan_employee,efs.loan employee,model_efs_loan,base.group_user,1,0,1,0
+access_efs_loan_hr_officer,efs.loan HR officer,model_efs_loan,hr.group_hr_user,1,1,1,0
+access_efs_loan_hr_manager,efs.loan HR administrator,model_efs_loan,hr.group_hr_manager,1,1,1,1
+access_efs_loan_payment_employee,efs.loan.payment employee,model_efs_loan_payment,base.group_user,1,0,0,0
+access_efs_loan_payment_hr_officer,efs.loan.payment HR officer,model_efs_loan_payment,hr.group_hr_user,1,1,1,0
+access_efs_loan_payment_hr_manager,efs.loan.payment HR administrator,model_efs_loan_payment,hr.group_hr_manager,1,1,1,1
+access_efs_loan_type_employee,efs.loan.type employee,model_efs_loan_type,base.group_user,1,0,0,0
+access_efs_loan_type_hr_manager,efs.loan.type HR administrator,model_efs_loan_type,hr.group_hr_manager,1,1,1,1
+access_efs_loan_reject_wizard,efs.loan.reject.wizard HR officer,model_efs_loan_reject_wizard,hr.group_hr_user,1,1,1,1
+access_efs_loan_tier_all,efs.loan.eligibility.tier read,model_efs_loan_eligibility_tier,base.group_user,1,0,0,0
+access_efs_loan_tier_manager,efs.loan.eligibility.tier manager,model_efs_loan_eligibility_tier,hr.group_hr_manager,1,1,1,1
+access_efs_loan_cancel_wizard_employee,efs.loan.cancel.wizard employee,model_efs_loan_cancel_wizard,base.group_user,1,1,1,1

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        The employee form is left otherwise stock. The live NihaoExpress
+        hr.employee form is unmodified Odoo apart from what hr_api_odoo and
+        ninjaz_order_database add, and this module has no business reshaping
+        it — it adds one page and one smart button, both about loans.
+    -->
+
+    <record id="view_hr_employee_form_loans" model="ir.ui.view">
+        <field name="name">hr.employee.form.loans</field>
+        <field name="model">hr.employee</field>
+        <field name="inherit_id" ref="hr.view_employee_form"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <button name="action_open_loans" type="object"
+                        class="oe_stat_button" icon="fa-money"
+                        groups="hr.group_hr_user">
+                    <field name="loan_count" widget="statinfo" string="Loans"/>
+                </button>
+            </xpath>
+
+            <!--
+                Read-only throughout: every figure is computed from the loan
+                records, and an editable copy would be a second source of truth
+                that quietly disagrees with the first. The one exception is the
+                service start date, which is an input nobody can derive.
+            -->
+            <xpath expr="//notebook" position="inside">
+                <page name="loans" string="Loans" groups="hr.group_hr_user">
+                    <div class="alert alert-warning" role="alert"
+                         invisible="loan_unauthorized_count == 0">
+                        One or more active loans have no Salary Deduction
+                        Authorization on file, so payroll deducts nothing for
+                        them. The count is under Standing, and the loans are
+                        listed below.
+                    </div>
+                    <group>
+                        <group string="Eligibility">
+                            <field name="loan_service_date"/>
+                            <field name="loan_service_years"
+                                   widget="float" digits="[6, 2]"/>
+                            <field name="loan_eligible"/>
+                            <field name="loan_max_amount"/>
+                        </group>
+                        <group string="Standing">
+                            <field name="loan_active_count"/>
+                            <field name="loan_unauthorized_count"/>
+                            <field name="loan_balance"/>
+                            <field name="loan_cutoff_deduction"/>
+                            <field name="loan_currency_id" invisible="1"/>
+                        </group>
+                    </group>
+                    <field name="loan_ids" readonly="1">
+                        <list>
+                            <field name="name"/>
+                            <field name="loan_type_id"/>
+                            <field name="amount" string="Principal"/>
+                            <field name="total_paid" string="Paid"/>
+                            <field name="balance" string="Remaining"/>
+                            <field name="monthly_amortization" string="Per Cutoff"/>
+                            <field name="deduction_authorized" string="Authorized"/>
+                            <field name="paid_percentage" widget="progressbar"/>
+                            <field name="state"/>
+                            <field name="currency_id" column_invisible="1"/>
+                        </list>
+                    </field>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_loan_cancel_wizard_form" model="ir.ui.view">
+        <field name="name">efs.loan.cancel.wizard.form</field>
+        <field name="model">efs.loan.cancel.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Request Loan Cancellation">
+                <div class="alert alert-info" role="alert">
+                    Deductions continue until both HR and the administrator
+                    approve this request. Repayments already made are not
+                    reversed.
+                </div>
+                <group>
+                    <field name="loan_id" invisible="1"/>
+                    <field name="currency_id" invisible="1"/>
+                    <field name="borrower_name"/>
+                    <field name="balance"/>
+                </group>
+                <group>
+                    <field name="reason" nolabel="1" colspan="2"
+                           placeholder="Why this loan should be closed early."/>
+                </group>
+                <footer>
+                    <button name="action_confirm" string="Request Cancellation"
+                            type="object" class="btn-primary" data-hotkey="q"/>
+                    <button string="Discard" class="btn-secondary"
+                            special="cancel" data-hotkey="x"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

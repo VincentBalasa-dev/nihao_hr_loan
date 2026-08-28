@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!--
+            LOAN-00001, matching the house style of the other Nihao modules
+            (PICK-00001, DR-OUT-000001): uppercase prefix, hyphen, zero-padded
+            number, no year. `noupdate` means a change here reaches an
+            already-installed database only through a migration.
+        -->
+        <record id="seq_efs_loan" model="ir.sequence">
+            <field name="name">Loan</field>
+            <field name="code">efs.loan</field>
+            <field name="prefix">LOAN-</field>
+            <field name="padding">5</field>
+            <field name="company_id" eval="False"/>
+        </record>
+
+    </data>
+</odoo>

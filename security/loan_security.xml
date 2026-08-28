@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        A loan is one of the few HR records an employee may read about
+        themselves and must not read about anyone else: it carries a salary
+        multiple, a debt and a stated purpose.
+
+        The ACLs in ir.model.access.csv say which models each group may touch
+        at all; these rules say which ROWS. Odoo ORs together the non-global
+        rules of every group a user belongs to, and `hr.group_hr_user` implies
+        `base.group_user`, so an HR officer gets the "all loans" rule OR'd with
+        the "own loans" one and sees everything. A plain employee has only the
+        first.
+
+        The company rules are global, so they AND with the rest: a record
+        outside the active companies is invisible to everyone.
+    -->
+    <data noupdate="1">
+
+        <record id="rule_efs_loan_own" model="ir.rule">
+            <field name="name">Employee loans: own only</field>
+            <field name="model_id" ref="model_efs_loan"/>
+            <field name="domain_force">['|', ('employee_id.user_id', '=', user.id), ('partner_id.user_ids', 'in', [user.id])]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
+        <record id="rule_efs_loan_all" model="ir.rule">
+            <field name="name">Employee loans: HR sees all</field>
+            <field name="model_id" ref="model_efs_loan"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('hr.group_hr_user'))]"/>
+        </record>
+
+        <record id="rule_efs_loan_company" model="ir.rule">
+            <field name="name">Employee loans: company</field>
+            <field name="model_id" ref="model_efs_loan"/>
+            <field name="global" eval="True"/>
+            <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_efs_loan_payment_own" model="ir.rule">
+            <field name="name">Loan repayments: own only</field>
+            <field name="model_id" ref="model_efs_loan_payment"/>
+            <field name="domain_force">['|', ('loan_id.employee_id.user_id', '=', user.id), ('loan_id.partner_id.user_ids', 'in', [user.id])]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
+        <record id="rule_efs_loan_payment_all" model="ir.rule">
+            <field name="name">Loan repayments: HR sees all</field>
+            <field name="model_id" ref="model_efs_loan_payment"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('hr.group_hr_user'))]"/>
+        </record>
+
+        <record id="rule_efs_loan_payment_company" model="ir.rule">
+            <field name="name">Loan repayments: company</field>
+            <field name="model_id" ref="model_efs_loan_payment"/>
+            <field name="global" eval="True"/>
+            <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+        </record>
+
+    </data>
+</odoo>

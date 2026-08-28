@@ -1,0 +1,245 @@
+# -*- coding: utf-8 -*-
+"""Loan standing on the employee record, and the deduction payroll asks for.
+
+Everything a manager needs to answer "can this person borrow, and what do they
+already owe" without loading every loan row -- plus ``_loan_deductions``, the
+one method that decides what comes out of a payslip.
+
+That method lives here rather than in the payroll bridge on purpose: it is loan
+logic, not payroll logic, and it has to work whether or not a payroll app is
+installed. The bridge only turns its answer into a payslip line.
+"""
+
+import logging
+
+from odoo import api, fields, models
+
+from . import loan_policy
+
+_logger = logging.getLogger(__name__)
+
+
+class HrEmployee(models.Model):
+    _inherit = 'hr.employee'
+
+    loan_ids = fields.One2many('efs.loan', 'employee_id', string='Loans')
+    loan_count = fields.Integer(
+        compute='_compute_loan_standing', string='# Loans')
+
+    loan_active_count = fields.Integer(
+        compute='_compute_loan_standing', string='Ongoing Loans',
+        help='Loans currently being repaid. Excludes pending applications and '
+             'settled loans.')
+    loan_balance = fields.Monetary(
+        compute='_compute_loan_standing', string='Current Debt',
+        currency_field='loan_currency_id',
+        help='Total still owed across every ongoing loan.')
+    loan_cutoff_deduction = fields.Monetary(
+        compute='_compute_loan_standing', string='Deduction per Cutoff',
+        currency_field='loan_currency_id',
+        help='What payroll takes from a one-week period across all ongoing '
+             'loans. Capped at the outstanding balance, so a final instalment '
+             'never overshoots. A real payslip is measured over its own dates.')
+    loan_unauthorized_count = fields.Integer(
+        compute='_compute_loan_standing', string='Awaiting Authorization',
+        help='Active loans with no Salary Deduction Authorization on file. '
+             'Payroll deducts nothing for these.')
+
+    loan_eligible = fields.Boolean(
+        compute='_compute_loan_standing', string='Eligible for a Loan',
+        help='Handbook section 3: the minimum period of continuous service.')
+    loan_max_amount = fields.Monetary(
+        compute='_compute_loan_standing', string='Maximum Loanable',
+        currency_field='loan_currency_id',
+        help='Handbook section 4, as a multiple of monthly basic salary by '
+             'length of service. Management may still reduce or deny.')
+    loan_service_years = fields.Float(
+        compute='_compute_loan_standing', string='Years of Service')
+
+    loan_currency_id = fields.Many2one(
+        'res.currency', compute='_compute_loan_standing')
+
+    # A hire date the loan rules can rely on. Optional: left empty, the
+    # fallbacks below are used instead. It exists because `first_contract_date`
+    # is a compute over hr.contract that is wrong for anyone rehired, and
+    # because a company that tracks continuous service differently needs
+    # somewhere to say so.
+    loan_service_date = fields.Date(
+        string='Loan Service Start',
+        help='Start of continuous service for loan eligibility. Leave empty '
+             'to use the first contract start date, and failing that the date '
+             'the employee record was created.')
+
+    # ── Service and salary ──────────────────────────────────────────────────
+
+    def _loan_service_start(self):
+        """The date continuous service is measured from.
+
+        Three sources, in order of how much they are trusted:
+
+        1. ``loan_service_date``, if somebody set it. An explicit answer beats
+           a derived one.
+        2. ``first_contract_date``, from ``hr_contract``. Looked up through
+           ``_fields`` rather than read directly so a version that renames or
+           drops it degrades to the next fallback instead of raising.
+        3. ``create_date``. A poor proxy, but it is a real date and it fails
+           safe: a record created today reads as zero years of service, which
+           denies a loan rather than granting one.
+        """
+        self.ensure_one()
+        if self.loan_service_date:
+            return self.loan_service_date
+        if 'first_contract_date' in self._fields and self.first_contract_date:
+            return self.first_contract_date
+        if self.create_date:
+            return fields.Date.to_date(self.create_date)
+        return False
+
+    def _loan_monthly_wage(self):
+        """Monthly basic salary, wherever this Odoo version keeps it.
+
+        Odoo 18: on the running contract, ``employee.contract_id.wage`` (module
+        ``hr_contract``, hence the manifest dependency).
+        Odoo 19: contracts became ``hr.version`` and ``wage`` is delegated onto
+        ``hr.employee`` directly. The getattr keeps this one method correct on
+        both, so the loan ceiling never silently computes against zero after a
+        version move -- which would waive the handbook's section 4 limit.
+        """
+        self.ensure_one()
+        contract = getattr(self, 'contract_id', None)
+        if contract and contract.wage:
+            return float(contract.wage)
+        return float(getattr(self, 'wage', 0.0) or 0.0)
+
+    @api.depends('loan_ids.state', 'loan_ids.balance',
+                 'loan_ids.repayment_amount', 'loan_ids.repayment_period',
+                 'loan_ids.deduction_authorized',
+                 'loan_service_date', 'contract_id.wage')
+    def _compute_loan_standing(self):
+        """Loan standing for one employee, per the employee handbook.
+
+        Section 3 sets a minimum service requirement; section 4 caps the
+        principal at a multiple of monthly basic salary that rises with length
+        of service. Both are computed here rather than only checked at
+        application time so a manager can see the limit on the employee form
+        *before* anyone applies.
+
+        This is what an employee *may* apply for. Section 4 also reserves the
+        right to approve, reduce or deny on financial capacity and employee
+        record, so nothing here is an entitlement.
+        """
+        today = fields.Date.context_today(self)
+        minimum = loan_policy.min_service_years(self.env)
+        for rec in self:
+            # `cancel_requested` counts as ongoing: the loan is still being
+            # deducted until somebody approves the cancellation.
+            ongoing = ('active', 'cancel_requested')
+            active = rec.loan_ids.filtered(lambda loan: loan.state in ongoing)
+            rec.loan_count = len(rec.loan_ids)
+            rec.loan_active_count = len(active)
+            rec.loan_balance = round(sum(active.mapped('balance')), 2)
+            rec.loan_unauthorized_count = len(
+                active.filtered(lambda loan: not loan.deduction_authorized))
+            rec.loan_currency_id = (
+                rec.company_id.currency_id or self.env.company.currency_id)
+            # A one-week figure, for display. A payslip is measured over its
+            # own dates -- see _loan_deductions.
+            rec.loan_cutoff_deduction = rec._loan_deduction_total()
+
+            start = rec._loan_service_start()
+            years = ((today - start).days / 365.25) if start else 0.0
+            rec.loan_service_years = round(years, 2)
+            rec.loan_eligible = years >= minimum
+
+            multiple = loan_policy.ceiling_multiple(self.env, years)
+            rec.loan_max_amount = round(rec._loan_monthly_wage() * multiple, 2)
+
+    # ── What payroll deducts ────────────────────────────────────────────────
+
+    def _loan_deductions(self, date_from=None, date_to=None):
+        """Active loans and what each gives up for one pay period.
+
+        Returns a list of ``(loan, amount)``, oldest first, so payroll deducts
+        and the repayment allocator credits in the same order.
+
+        The handbook (section 5.1) sets repayment as a flat weekly figure, so
+        the amount owed for a period is that figure times the weeks the period
+        actually spans. Counting real days rather than assuming a fixed month
+        keeps a 31-day cutoff slightly larger than a 30-day one and makes a
+        year total exactly 52.18 weeks -- which is what "PHP 1,000 per week"
+        means. Given no period, one week is assumed.
+
+        Three things stop a deduction entirely:
+
+        * **No written authorization** (section 6, Labor Code article 113).
+          A wage deduction without it is unlawful, so an unauthorised loan
+          deducts nothing however active it looks. Deliberately silent --
+          payroll should still run, the loan simply does not participate. The
+          `loan_unauthorized_count` field above is what makes this visible.
+        * **Before the start date** (section 5.2). Repayment commences some
+          days after the proceeds are received.
+        * **Nothing left owing.** The amount is capped at the balance, because
+          a final instalment usually exceeds what remains and deducting it in
+          full would push the balance negative.
+        """
+        self.ensure_one()
+        # `self.id` is a NewId on an unsaved form, which Postgres cannot be
+        # asked about. An employee nobody has saved yet has no loans, so the
+        # honest answer is an empty list rather than a traceback in the middle
+        # of typing a new employee.
+        employee_id = self._origin.id
+        if not employee_id:
+            return []
+        loans = self.env['efs.loan'].sudo().search(
+            [('employee_id', '=', employee_id),
+             #  deducts exactly like : a request is
+             # not a decision, and stopping payroll the moment somebody asks
+             # would let anyone halt their own repayments unilaterally.
+             ('state', 'in', ('active', 'cancel_requested'))],
+            order='start_date asc, id asc',
+        )
+
+        days = None
+        if date_from and date_to:
+            days = max((fields.Date.to_date(date_to)
+                        - fields.Date.to_date(date_from)).days + 1, 0)
+
+        result = []
+        for loan in loans:
+            if not loan.deduction_authorized:
+                continue
+            if loan.start_date and date_to \
+                    and loan.start_date > fields.Date.to_date(date_to):
+                continue
+            # Each loan carries its own period (weekly, semi-monthly,
+            # monthly). The instalment is scaled by the share of one period
+            # the payslip covers, so a monthly figure on a semi-monthly
+            # payroll comes out as roughly half per slip and exactly the
+            # whole over a month. With no dates, one full period is assumed.
+            share = 1.0 if days is None else days / loan._period_days()
+            due = min((loan.repayment_amount or 0.0) * share,
+                      loan.balance or 0.0)
+            if due > 0.005:
+                result.append((loan, round(due, 2)))
+        return result
+
+    def _loan_deduction_total(self, date_from=None, date_to=None):
+        """Total to deduct for one pay period. What the DED_LOAN rule calls."""
+        self.ensure_one()
+        return round(
+            sum(amount for _loan, amount
+                in self._loan_deductions(date_from, date_to)),
+            2,
+        )
+
+    def action_open_loans(self):
+        """The Loans smart button on the employee form."""
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Loans',
+            'res_model': 'efs.loan',
+            'view_mode': 'list,form',
+            'domain': [('employee_id', '=', self.id)],
+            'context': {'default_employee_id': self.id},
+        }

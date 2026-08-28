@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        Loan products. Deliberately shaped like Payroll's Salary Rules: a list
+        of configurable records, each with a method picker that decides which
+        fields matter, ending in a Python escape hatch.
+
+        Lives under Configuration because an interest rate is a commercial
+        decision, not day-to-day HR work - and the ACL matches: an HR officer
+        may endorse loans, but only an administrator may set what they cost.
+    -->
+
+    <record id="view_efs_loan_type_list" model="ir.ui.view">
+        <field name="name">efs.loan.type.list</field>
+        <field name="model">efs.loan.type</field>
+        <field name="arch" type="xml">
+            <list string="Loan Products">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="code"/>
+                <field name="interest_method"/>
+                <field name="interest_rate" optional="show"/>
+                <field name="repayment_basis" optional="hide"/>
+                <field name="repayment_period" optional="hide"/>
+                <field name="default_repayment_amount" optional="hide"/>
+                <field name="default_repayment_percent" optional="hide"/>
+                <field name="loan_count" string="Loans"/>
+                <field name="currency_id" column_invisible="1"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_efs_loan_type_form" model="ir.ui.view">
+        <field name="name">efs.loan.type.form</field>
+        <field name="model">efs.loan.type</field>
+        <field name="arch" type="xml">
+            <form string="Loan Product">
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_open_loans" type="object"
+                                class="oe_stat_button" icon="fa-list-ul">
+                            <field name="loan_count" widget="statinfo"
+                                   string="Loans"/>
+                        </button>
+                    </div>
+                    <widget name="web_ribbon" title="Archived"
+                            bg_color="text-bg-danger" invisible="active"/>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="e.g. Construction Loan"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="code" placeholder="e.g. construction"/>
+                            <field name="sequence"/>
+                            <field name="active" invisible="1"/>
+                            <field name="currency_id" invisible="1"/>
+                        </group>
+                        <group>
+                            <field name="interest_method"/>
+                            <!-- Only shown where it means something: a rate on
+                                 a no-interest product would imply it charges. -->
+                            <field name="interest_rate"
+                                   invisible="interest_method not in ('flat', 'diminishing')"
+                                   required="interest_method in ('flat', 'diminishing')"/>
+                        </group>
+                    </group>
+
+                    <!--
+                        Repayment terms this product overrides. "Use company
+                        setting" on both pickers is the default, so a product
+                        carries no policy until somebody gives it one. Copied
+                        onto each loan at filing; changing them here never
+                        re-prices a running loan.
+                    -->
+                    <group string="Repayment Terms">
+                        <group>
+                            <field name="repayment_basis"/>
+                            <field name="repayment_period"/>
+                        </group>
+                        <group>
+                            <field name="default_repayment_amount"
+                                   invisible="repayment_basis == 'percent'"/>
+                            <field name="default_repayment_percent"
+                                   invisible="repayment_basis == 'fixed'"/>
+                        </group>
+                    </group>
+
+                    <notebook>
+                        <page name="formula" string="Formula"
+                              invisible="interest_method != 'code'">
+                            <field name="interest_python_compute" widget="code"
+                                   options="{'mode': 'python'}"/>
+                        </page>
+                        <page name="note" string="Description">
+                            <field name="note"
+                                   placeholder="What this product is for, and the terms it was agreed on."/>
+                        </page>
+                    </notebook>
+
+                    <div class="text-muted mt-3" invisible="interest_method != 'none'">
+                        This product charges no interest. Repayments cover the
+                        principal only.
+                    </div>
+                    <div class="text-muted mt-3" invisible="interest_method != 'flat'">
+                        Interest is charged on the original amount for the whole
+                        term — the usual "add-on" quote. A borrower repaying
+                        early still pays the full interest.
+                    </div>
+                    <div class="text-muted mt-3" invisible="interest_method != 'diminishing'">
+                        Interest accrues on what is still owed and falls as the
+                        balance does. Cheaper for the borrower than a flat rate
+                        quoted at the same number.
+                    </div>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_efs_loan_type_search" model="ir.ui.view">
+        <field name="name">efs.loan.type.search</field>
+        <field name="model">efs.loan.type</field>
+        <field name="arch" type="xml">
+            <search string="Loan Products">
+                <field name="name"/>
+                <field name="code"/>
+                <filter name="filter_interest_free" string="Interest-free"
+                        domain="[('interest_method', '=', 'none')]"/>
+                <filter name="filter_archived" string="Archived"
+                        domain="[('active', '=', False)]"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_efs_loan_type" model="ir.actions.act_window">
+        <field name="name">Loan Products</field>
+        <field name="res_model">efs.loan.type</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_efs_loan_type_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Set up a loan product</p>
+            <p>
+                A product is what a loan is lent under — its name, and how any
+                interest is worked out. Add one per offering rather than
+                editing code.
+            </p>
+        </field>
+    </record>
+
+</odoo>

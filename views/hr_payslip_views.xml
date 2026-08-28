@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        The other direction of the link: from a payslip, straight to the loan
+        repayments it posted. A repayment knows its payslip (`payslip_id`);
+        this makes the payslip know its repayments, so a payroll clerk
+        checking a deduction can see exactly which loans it landed on without
+        leaving the payslip.
+    -->
+    <record id="view_hr_payslip_form_loan_repayments" model="ir.ui.view">
+        <field name="name">hr.payslip.form.loan.repayments</field>
+        <field name="model">hr.payslip</field>
+        <field name="inherit_id" ref="payroll.hr_payslip_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <button name="action_open_loan_payments" type="object"
+                        class="oe_stat_button" icon="fa-money"
+                        invisible="loan_payment_count == 0">
+                    <field name="loan_payment_count" widget="statinfo"
+                           string="Loan Repayments"/>
+                </button>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

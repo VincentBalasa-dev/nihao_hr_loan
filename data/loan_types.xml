@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        The products NihaoExpress lends against, all interest-free: the
+        employee handbook sets a flat weekly repayment and says nothing about
+        interest, so charging any would be inventing policy.
+
+        `noupdate="1"` so a module upgrade never overwrites a rate somebody
+        configured. These are starting points, not managed records - HR owns
+        them from Employees -> Configuration -> Loan Products once created.
+    -->
+    <data noupdate="1">
+
+        <record id="loan_type_sss" model="efs.loan.type">
+            <field name="name">SSS Salary Loan</field>
+            <field name="code">sss</field>
+            <field name="sequence">10</field>
+            <field name="interest_method">none</field>
+            <field name="note">Company-administered. SSS lends at its own rate direct to the member; this product covers only what the company advances.</field>
+        </record>
+
+        <record id="loan_type_pagibig" model="efs.loan.type">
+            <field name="name">Pag-IBIG Multi-Purpose Loan</field>
+            <field name="code">pagibig</field>
+            <field name="sequence">20</field>
+            <field name="interest_method">none</field>
+        </record>
+
+        <record id="loan_type_emergency" model="efs.loan.type">
+            <field name="name">Emergency Loan</field>
+            <field name="code">emergency</field>
+            <field name="sequence">30</field>
+            <field name="interest_method">none</field>
+        </record>
+
+        <record id="loan_type_car" model="efs.loan.type">
+            <field name="name">Car Loan</field>
+            <field name="code">car</field>
+            <field name="sequence">40</field>
+            <field name="interest_method">none</field>
+        </record>
+
+        <record id="loan_type_housing" model="efs.loan.type">
+            <field name="name">Housing Loan</field>
+            <field name="code">housing</field>
+            <field name="sequence">50</field>
+            <field name="interest_method">none</field>
+        </record>
+
+        <record id="loan_type_personal" model="efs.loan.type">
+            <field name="name">Personal Loan</field>
+            <field name="code">personal</field>
+            <field name="sequence">60</field>
+            <field name="interest_method">none</field>
+        </record>
+
+    </data>
+</odoo>

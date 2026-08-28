@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="res_config_settings_view_form_loan" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.loan</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="base_setup.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app string="Loans" name="nihao_hr_loan"
+                     groups="hr.group_hr_manager">
+
+                    <block title="Policy Enforcement"
+                           help="What happens when an application breaks one of the rules below. The rules stay where they are; this only changes their consequence.">
+                        <setting string="When a rule is broken"
+                                 help="Enforce refuses the application. Advise accepts it and records every rule it fails on the loan, so HR sees them and decides. Off does not evaluate the rules at all.">
+                            <field name="loan_policy_enforcement" class="oe_inline" widget="radio"/>
+                        </setting>
+                    </block>
+
+                    <block title="Eligibility"
+                           help="Who may borrow, and how often. Everything except the service requirement is off until you set it.">
+                        <setting string="Minimum Service"
+                                 help="Continuous service required before an employee may borrow at all. 0 lets anyone apply.">
+                            <field name="loan_min_service_years" class="oe_inline"/>
+                            <span class="text-muted"> year(s)</span>
+                        </setting>
+                        <setting string="Maximum Concurrent Loans"
+                                 help="How many loans one employee may have running at once. 0 means no limit.">
+                            <field name="loan_max_active" class="oe_inline"/>
+                        </setting>
+                        <setting string="Settle Before Reborrowing"
+                                 help="Refuse a new application while the employee still owes anything on an earlier loan.">
+                            <field name="loan_require_settled"/>
+                        </setting>
+                        <setting string="Cooling-off Period"
+                                 help="Days that must pass after settling a loan before the same employee may apply again. Counted from the last posted repayment.">
+                            <field name="loan_cooldown_days" class="oe_inline"/>
+                            <span class="text-muted"> day(s)</span>
+                        </setting>
+                    </block>
+
+                    <block title="How Much"
+                           help="The ceiling is a multiple of monthly basic salary that rises with length of service. The bands themselves are records, because how many bands you run is a policy choice.">
+                        <setting string="Eligibility Bands"
+                                 help="Each band applies from its year threshold upward. Below the lowest band nobody may borrow.">
+                            <div class="mt-2">
+                                <button name="action_open_loan_tiers" type="object"
+                                        string="Eligibility Bands" icon="fa-arrow-right"
+                                        class="btn-link"/>
+                                <span class="text-muted">
+                                    <field name="loan_tier_count" class="oe_inline" readonly="1"/> band(s) configured
+                                </span>
+                            </div>
+                        </setting>
+                        <setting string="Ceiling Includes Existing Debt"
+                                 help="Measure the maximum against what the employee already owes plus the new request, rather than against the new request on its own.">
+                            <field name="loan_ceiling_counts_debt"/>
+                        </setting>
+                        <setting string="Loan Products"
+                                 help="What a loan is lent under, and how any interest is worked out.">
+                            <div class="mt-2">
+                                <button name="action_open_loan_products" type="object"
+                                        string="Loan Products" icon="fa-arrow-right"
+                                        class="btn-link"/>
+                                <span class="text-muted">
+                                    <field name="loan_product_count" class="oe_inline" readonly="1"/> product(s)
+                                </span>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <block title="Repayment"
+                           help="What comes out of a payslip, and when it starts.">
+                        <setting string="Repayment Basis"
+                                 help="Fixed: a set figure each period. Percent: a share of the principal each period, so 10% repays in about ten periods. A loan product may override this.">
+                            <field name="loan_repayment_basis" class="oe_inline"/>
+                        </setting>
+                        <setting string="Repayment Period"
+                                 help="How often an instalment falls due. Payroll prorates by the days each payslip covers, so a monthly figure on a semi-monthly payroll comes out as roughly half per slip. A loan product may override this.">
+                            <field name="loan_repayment_period" class="oe_inline"/>
+                        </setting>
+                        <setting string="Default Repayment per Period"
+                                 help="On a fixed basis. Offered on a new application and editable per loan.">
+                            <field name="loan_repayment_amount" class="oe_inline"/>
+                        </setting>
+                        <setting string="Default Percent per Period"
+                                 help="On a percent basis. The share of the principal repaid each period; editable per loan.">
+                            <field name="loan_repayment_percent" class="oe_inline"/>
+                            <span class="text-muted"> % of principal</span>
+                        </setting>
+                        <setting string="Repayment Starts After"
+                                 help="Days between approval and the first deduction, so the employee has the proceeds before anything is taken back.">
+                            <field name="loan_start_delay_days" class="oe_inline"/>
+                            <span class="text-muted"> day(s)</span>
+                        </setting>
+                        <setting string="Maximum Repayment"
+                                 help="Cap on total loan repayments across every active loan, as a percentage of monthly basic salary. 0 means no limit.">
+                            <field name="loan_max_repayment_percent" class="oe_inline"/>
+                            <span class="text-muted"> % of monthly salary</span>
+                        </setting>
+                    </block>
+
+                    <block title="Coverage"
+                           help="Who the loan policy applies to at all. Both off by default; a client turns on what their handbook says.">
+                        <setting string="Eligible Employee Types"
+                                 help="Comma-separated: employee (regular), worker, student, trainee, contractor, freelance. Empty allows every type.">
+                            <field name="loan_eligible_types" class="oe_inline"
+                                   placeholder="employee"/>
+                        </setting>
+                        <setting string="Agency Staff by Management Discretion"
+                                 help="Employees under a manpower agency cannot apply themselves; an HR administrator must file the loan for them. Needs the agency field from hr_api_odoo.">
+                            <field name="loan_agency_discretion"/>
+                        </setting>
+                    </block>
+
+                    <block title="External Borrowers"
+                           help="Loans to people who are not employees. Off by default; a lender to its own staff has no business accepting an application from a contact.">
+                        <setting string="Allow External Borrowers"
+                                 help="A loan may be made to a contact. The service, salary and coverage rules do not apply; repayments are recorded by hand.">
+                            <field name="loan_allow_external"/>
+                        </setting>
+                        <setting string="Maximum for External Borrowers"
+                                 help="The only automatic limit, since there is no salary to measure against. 0 means no limit; use Advise mode and review by hand."
+                                 invisible="not loan_allow_external">
+                            <field name="loan_external_max_amount" class="oe_inline"/>
+                        </setting>
+                    </block>
+
+                </app>
+            </xpath>
+        </field>
+    </record>
+
+    <!--
+        Opens the settings screen already scrolled to the Loans block, the way
+        every Odoo app's own Settings menu item does.
+    -->
+    <record id="action_loan_config_settings" model="ir.actions.act_window">
+        <field name="name">Settings</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_mode">form</field>
+        <field name="target">inline</field>
+        <field name="context">{'module': 'nihao_hr_loan'}</field>
+    </record>
+
+</odoo>
