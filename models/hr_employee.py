@@ -238,14 +238,35 @@ class HrEmployee(models.Model):
                 result.append((loan, round(due, 2)))
         return result
 
-    def _loan_deduction_total(self, date_from=None, date_to=None):
-        """Total to deduct for one pay period. What the DED_LOAN rule calls."""
+    def _loan_deduction_total(self, date_from=None, date_to=None,
+                              available=None):
+        """Total to deduct for one pay period. What the DED_LOAN rule calls.
+
+        ``available`` is what the payslip has left to give when the rule
+        runs -- the running BASIC + allowance + deduction totals at the
+        DED_LOAN sequence. The deduction never exceeds it and never drives
+        the net below zero: a wage deduction larger than the wage is not a
+        repayment, it is a payroll error (and, for an employee, a Labor
+        Code problem). A slip with no earnings therefore deducts nothing.
+
+        The shortfall is deliberately not tracked anywhere. The balance is
+        derived from posted repayments, so an under-deducted period simply
+        leaves the balance higher and the loan runs a period longer --
+        no carry-forward bookkeeping to drift.
+
+        ``None`` means no cap, which keeps the employee-form smart button
+        (a rate, not a slip) and any caller that has no payslip context
+        working exactly as before.
+        """
         self.ensure_one()
-        return round(
+        total = round(
             sum(amount for _loan, amount
                 in self._loan_deductions(date_from, date_to)),
             2,
         )
+        if available is not None:
+            total = min(total, round(max(available, 0.0), 2))
+        return total
 
     def action_open_loans(self):
         """The Loans smart button on the employee form."""

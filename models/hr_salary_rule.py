@@ -40,9 +40,19 @@ LOAN_RULE_SEQUENCE = 150
 # a payslip owes depends on how many days it covers, so a 31-day cutoff takes
 # slightly more than a 30-day one. Negative, because deductions are stored as
 # negative totals and summed into the DED category.
+#
+# `available` is the pay the slip still has when this rule runs: the running
+# category totals at sequence 150 -- earnings (BASIC), allowances (ALW) and
+# the statutory deductions already taken (DED, negative). The deduction is
+# capped there so a thin or empty slip is never driven below a zero net BY
+# THE LOAN. A rule can only see what ran before it, so a deduction somebody
+# sequences after 150 can still push the net negative -- that is that rule's
+# placement, not this one's. (categories reads 0.0 for a code a deployment
+# does not use, so this is safe on any category setup.)
 LOAN_RULE_FORMULA = (
     'result = -employee._loan_deduction_total('
-    'payslip.date_from, payslip.date_to)'
+    'payslip.date_from, payslip.date_to, '
+    'available=categories.BASIC + categories.ALW + categories.DED)'
 )
 
 RULE_NOTE = (
