@@ -231,12 +231,27 @@
                             -->
                             <field name="repayment_amount"
                                    readonly="repayment_basis == 'percent' or state not in ('pending', 'endorsed')"/>
+                            <!--
+                                The derived figures (interest, total payable,
+                                per-month, term) describe the APPROVED loan, not
+                                the request. Hidden while the application is
+                                still Pending/Endorsed so a blank form does not
+                                show a "per month" computed off the default
+                                instalment before anything is decided; they
+                                appear once the loan is approved. Start Date is
+                                left visible-but-blank on purpose — it reads as
+                                "set at approval".
+                            -->
                             <field name="interest_amount" readonly="1"
-                                   invisible="interest_amount == 0"/>
-                            <field name="total_payable" readonly="1"/>
-                            <field name="monthly_amortization" readonly="1"/>
-                            <field name="term_periods" readonly="1"/>
-                            <field name="term_months" readonly="1"/>
+                                   invisible="interest_amount == 0 or state in ('pending', 'endorsed')"/>
+                            <field name="total_payable" readonly="1"
+                                   invisible="state in ('pending', 'endorsed')"/>
+                            <field name="monthly_amortization" readonly="1"
+                                   invisible="state in ('pending', 'endorsed')"/>
+                            <field name="term_periods" readonly="1"
+                                   invisible="state in ('pending', 'endorsed')"/>
+                            <field name="term_months" readonly="1"
+                                   invisible="state in ('pending', 'endorsed')"/>
                             <field name="start_date"
                                    readonly="state in ('paid', 'rejected', 'cancelled')"/>
                         </group>
