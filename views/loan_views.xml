@@ -22,7 +22,7 @@
                 <field name="total_payable" optional="hide" sum="Total Payable"/>
                 <field name="repayment_amount" optional="hide"/>
                 <field name="repayment_period" optional="hide"/>
-                <field name="monthly_amortization" optional="show"/>
+                <field name="monthly_amortization" optional="hide"/>
                 <field name="total_paid" optional="hide" sum="Total Repaid"/>
                 <field name="balance" sum="Total Outstanding"/>
                 <field name="term_months" optional="show"/>
@@ -246,8 +246,14 @@
                                    invisible="interest_amount == 0 or state in ('pending', 'endorsed')"/>
                             <field name="total_payable" readonly="1"
                                    invisible="state in ('pending', 'endorsed')"/>
-                            <field name="monthly_amortization" readonly="1"
-                                   invisible="state in ('pending', 'endorsed')"/>
+                            <!--
+                                monthly_amortization ("Per Month") is deliberately
+                                NOT on the form: it is a rate (instalment × 4.35
+                                weeks), reads like "what comes out this month",
+                                ignores the start date, and confused users into
+                                editing the start date to change it. The field
+                                still exists — _check_repayment_capacity sums it.
+                            -->
                             <field name="term_periods" readonly="1"
                                    invisible="state in ('pending', 'endorsed')"/>
                             <field name="term_months" readonly="1"

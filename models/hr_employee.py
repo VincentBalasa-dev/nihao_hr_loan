@@ -203,24 +203,35 @@ class HrEmployee(models.Model):
             order='start_date asc, id asc',
         )
 
+        period_from = fields.Date.to_date(date_from) if date_from else None
+        period_to = fields.Date.to_date(date_to) if date_to else None
         days = None
-        if date_from and date_to:
-            days = max((fields.Date.to_date(date_to)
-                        - fields.Date.to_date(date_from)).days + 1, 0)
+        if period_from and period_to:
+            days = max((period_to - period_from).days + 1, 0)
 
         result = []
         for loan in loans:
             if not loan.deduction_authorized:
                 continue
-            if loan.start_date and date_to \
-                    and loan.start_date > fields.Date.to_date(date_to):
+            if loan.start_date and period_to \
+                    and loan.start_date > period_to:
                 continue
+            # A loan starting mid-period is charged for its own days only.
+            # Without this clamp a monthly slip qualifying by a single day
+            # charged the whole month: a loan starting the 15th deducted
+            # 30/7 weeks on a Sep 1-30 slip instead of 16/7. The days that
+            # count run from the later of the period start and the loan
+            # start.
+            loan_days = days
+            if days is not None and loan.start_date \
+                    and loan.start_date > period_from:
+                loan_days = max((period_to - loan.start_date).days + 1, 0)
             # Each loan carries its own period (weekly, semi-monthly,
             # monthly). The instalment is scaled by the share of one period
             # the payslip covers, so a monthly figure on a semi-monthly
             # payroll comes out as roughly half per slip and exactly the
             # whole over a month. With no dates, one full period is assumed.
-            share = 1.0 if days is None else days / loan._period_days()
+            share = 1.0 if loan_days is None else loan_days / loan._period_days()
             due = min((loan.repayment_amount or 0.0) * share,
                       loan.balance or 0.0)
             if due > 0.005:

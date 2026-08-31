@@ -43,6 +43,15 @@ PERIOD_SELECTION = [
     ('month', 'Monthly'),
 ]
 
+# The loan fields payroll reads when it computes a DED_LOAN line (see
+# hr_employee._loan_deductions). A write that touches none of these cannot
+# change any payslip, so open slips are only recomputed when one of them moves.
+PAYSLIP_INPUT_FIELDS = frozenset((
+    'state', 'deduction_authorized', 'start_date', 'employee_id',
+    'repayment_amount', 'repayment_basis', 'repayment_percent',
+    'repayment_period', 'amount',
+))
+
 
 class Loan(models.Model):
     _name = 'efs.loan'
@@ -815,7 +824,10 @@ class Loan(models.Model):
         stops this from recursing.
         """
         if 'state' not in vals or self.env.context.get(STATE_WRITE_CTX):
-            return super().write(vals)
+            result = super().write(vals)
+            if PAYSLIP_INPUT_FIELDS & vals.keys():
+                self._refresh_open_payslips()
+            return result
 
         target = vals['state']
         remainder = {k: v for k, v in vals.items() if k != 'state'}
@@ -823,7 +835,60 @@ class Loan(models.Model):
             super().write(remainder)
         for rec in self:
             rec._transition_to(target)
+        # The transition's own _state_write already refreshed open payslips
+        # for the state change; the remainder only needs one if it carried
+        # payroll inputs of its own.
+        if PAYSLIP_INPUT_FIELDS & remainder.keys():
+            self._refresh_open_payslips()
         return True
+
+    def unlink(self):
+        """Delete takes the whole loan with it: the record and its ledger.
+
+        A business decision, deliberately the opposite of cancellation.
+        Cancel ends a real loan and keeps every record; delete is the wipe --
+        `efs.loan.payment.loan_id` is `ondelete='cascade'`, so the repayment
+        rows go with the loan. Open payslips are recomputed so the deduction
+        vanishes from them too. What does NOT change is any confirmed
+        payslip: its DED_LOAN line describes money that was actually paid out
+        at a lower net, and rewriting a paid slip would falsify payroll. To
+        undo a confirmed deduction, draft or cancel that payslip first --
+        which reverses its repayments -- then delete the loan.
+
+        The employees are captured before super() -- afterwards the records
+        are gone and there is nothing left to map for the payslip refresh.
+        """
+        employees = self.mapped('employee_id')
+        result = super().unlink()
+        self._refresh_open_payslips(employees)
+        return result
+
+    def _refresh_open_payslips(self, employees=None):
+        """Recompute draft/waiting payslips after a loan changes under them.
+
+        A payslip's lines are a snapshot taken by Compute Sheet; nothing on
+        the loan reaches into them by itself. So a loan that is approved,
+        cancelled, deleted, re-dated or (de)authorized after a sheet was
+        computed leaves that sheet showing a DED_LOAN figure that is no
+        longer true. OCA payroll does recompute at confirmation -- unless
+        `payroll.prevent_compute_on_confirm` is set -- but the clerk reading
+        the open slip is looking at the stale figure either way.
+
+        Only draft and waiting slips are touched: a done slip is history and
+        has already posted its repayments. Elevated because the person acting
+        on a loan (HR) is not necessarily allowed to write payslips; the
+        recompute is a mechanical consequence of their lawful action, the
+        same reasoning as `_post_loan_repayments`.
+        """
+        employees = self.mapped('employee_id') if employees is None else employees
+        if not employees:
+            return
+        slips = self.env['hr.payslip'].sudo().search([
+            ('employee_id', 'in', employees.ids),
+            ('state', 'in', ('draft', 'verify')),
+        ])
+        if slips:
+            slips.compute_sheet()
 
     def _transition_to(self, target):
         """Run the action a status-bar click is asking for."""
