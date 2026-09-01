@@ -102,7 +102,11 @@ class ResConfigSettings(models.TransientModel):
              'maths on Per Payslip (flat) loans: the capacity check and the '
              'term/interest figures. The deduction itself is always one '
              'instalment per payslip, whatever the cadence.')
-    loan_flat_formula = fields.Text(
+    # Char, not Text: res.config.settings only round-trips boolean / number /
+    # char / selection / many2one fields through config_parameter, and a
+    # Text here crashes the whole Settings page at default_get. Char holds
+    # a multi-line formula fine; the ace widget edits it.
+    loan_flat_formula = fields.Char(
         string='Flat Deduction Formula',
         config_parameter=loan_policy.PARAM_FLAT_FORMULA,
         help='Optional salary-rule-style Python overriding what a payslip '
