@@ -20,8 +20,6 @@ model and the payroll bridge can all reach them without importing each other.
 """
 
 import logging
-from calendar import monthrange
-from datetime import date
 
 _logger = logging.getLogger(__name__)
 
@@ -233,9 +231,11 @@ def repayment_period(env):
 
 
 # ── The payroll's cutoff calendar, for flat (per-payslip) loans ──────────────
-# One flat instalment falls due per CUTOFF. What a cutoff is -- a half-month
-# (paydays on the 15th and month-end), a week, a month -- is the company's
-# payroll calendar, not something a loan can know on its own.
+# A flat loan deducts one instalment per PAYSLIP, so the only thing the
+# calendar decides for it is the monthly-equivalent maths: how many payslips
+# a month holds, for the capacity check and the term/interest figures.
+# Semi-monthly (paydays on the 15th and month-end) means a flat 1,000 weighs
+# 2,000 a month.
 PARAM_PAYSLIP_CADENCE = 'nihao_hr_loan.payslip_cadence'
 CADENCES = ('week', 'semimonth', 'month')
 DEFAULT_PAYSLIP_CADENCE = 'semimonth'
@@ -247,34 +247,18 @@ def payslip_cadence(env):
     return raw if raw in CADENCES else DEFAULT_PAYSLIP_CADENCE
 
 
-def cutoff_count(start, end, cadence):
-    """How many cutoffs END inside [start, end], inclusive.
+# ── Custom flat-deduction rule ───────────────────────────────────────────────
+# Salary-rule-style Python overriding what a payslip deducts for flat loans.
+# Empty (the default) keeps the built-in figure: one instalment, closing
+# stretch taken in full. Evaluated with safe_eval; locals are `result` (the
+# built-in figure, and what to assign), `per`, `balance`, `loans`,
+# `employee`, `date_from`, `date_to`. A formula that raises is logged and
+# ignored -- payroll must not break on a typo here.
+PARAM_FLAT_FORMULA = 'nihao_hr_loan.flat_formula'
 
-    This is the flat loan's schedule: one instalment falls due each time a
-    cutoff closes. Semi-monthly cutoffs close on the 15th and the last day
-    of each month, monthly ones on the last day; weekly ones are counted
-    arithmetically (a closing day per 7 days from the start). A slip
-    covering Sep 1-30 against a loan started Sep 15 therefore owes two
-    semi-monthly instalments -- the 9/15 and 9/30 closes -- not the three
-    week-marks the old weekly-only clock counted.
-    """
-    if end < start:
-        return 0
-    if cadence == 'week':
-        return (end - start).days // 7 + 1
-    count = 0
-    cursor = date(start.year, start.month, 1)
-    while cursor <= end:
-        last_day = date(cursor.year, cursor.month,
-                        monthrange(cursor.year, cursor.month)[1])
-        closes = [last_day] if cadence == 'month' else [
-            date(cursor.year, cursor.month, 15), last_day]
-        for close in closes:
-            if start <= close <= end:
-                count += 1
-        cursor = date(cursor.year + (cursor.month == 12),
-                      cursor.month % 12 + 1, 1)
-    return count
+
+def flat_formula(env):
+    return str(_raw(env, PARAM_FLAT_FORMULA, '') or '').strip()
 
 
 def repayment_amount(env):

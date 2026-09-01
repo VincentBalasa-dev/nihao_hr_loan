@@ -13,6 +13,7 @@ installed. The bridge only turns its answer into a payslip line.
 import logging
 
 from odoo import api, fields, models
+from odoo.tools.safe_eval import safe_eval
 
 from . import loan_policy
 
@@ -246,67 +247,56 @@ class HrEmployee(models.Model):
             if due > 0.005:
                 result.append((loan, round(due, 2)))
         if flat_loans:
-            result = self._loan_flat_shares(flat_loans, period_to) + result
+            result = self._loan_flat_shares(
+                flat_loans, period_from, period_to) + result
         return result
 
-    def _loan_flat_shares(self, flat_loans, period_to):
-        """Flat loans share one instalment per cutoff, split equally.
+    def _loan_flat_shares(self, flat_loans, period_from, period_to):
+        """Flat loans share one instalment PER PAYSLIP, split equally.
 
         The instalment belongs to the EMPLOYEE, not to each loan: holding
-        two flat loans does not double what a payslip gives up. One
-        instalment (the largest among the flat loans, normally they are all
-        the same figure) falls due per week from the earliest start date;
-        what the schedule says should have been paid, minus what has been,
-        is the pot this slip owes. The pot is then split equally across the
-        flat loans -- 1,000 over two loans credits 500 to each balance --
-        with a loan that cannot absorb its share (almost repaid) spilling
-        the difference to the others, so a closed loan hands its half back
-        and the survivor starts receiving the full instalment.
+        two flat loans does not double what a payslip gives up. Every
+        computed payslip asks exactly one instalment (the largest among the
+        flat loans; normally they are all the same figure) -- not one per
+        calendar period, so a slip covering a whole month still takes
+        1,000, and a period that deducted nothing simply leaves the balance
+        higher, to be asked again on the next slip. No calendar, no
+        catch-up arithmetic.
 
-        Schedule-driven, so a cutoff that deducted nothing rolls forward to
-        the next slip rather than onto the end of the loans, and a borrower
-        who paid ahead by hand owes nothing until the schedule catches up.
+        Two refinements on the plain figure. The closing stretch snaps: a
+        balance under two instalments (1,500, or a final 983) is asked in
+        full, so a slip that can afford it closes the loan instead of
+        dragging a sub-instalment tail. And the figure is overridable from
+        Settings ("Flat Deduction Formula") with salary-rule-style Python
+        for deployments whose policy outgrows the built-in rule; a broken
+        formula logs and falls back rather than breaking payroll.
+
+        The pot is then split equally across the flat loans -- 1,000 over
+        two loans credits 500 to each balance -- with a loan that cannot
+        absorb its share spilling the difference to the others, so a
+        closed loan hands its half back and the survivor starts receiving
+        the full instalment.
         """
         per = max((loan.repayment_amount or 0.0) for loan in flat_loans)
-        starts = [loan.start_date for loan in flat_loans if loan.start_date]
-        if period_to and starts:
-            earliest = min(starts)
-            # One instalment falls due per CUTOFF CLOSE on the payroll's
-            # cadence (Settings; semi-monthly = the 15th and month-end), so
-            # a monthly slip against a mid-month start owes exactly the
-            # cutoffs it contains -- not a week count.
-            elapsed = loan_policy.cutoff_count(
-                earliest, period_to, loan_policy.payslip_cadence(self.env))
-            # What has been paid against the shared schedule: every posted
-            # payment on ANY of the employee's flat loans since the window
-            # opened -- not just the loans still running. A loan that
-            # settles mid-window leaves the pot, but the instalments it
-            # absorbed were the employee's weekly payments and still count,
-            # or the survivor would be billed a phantom catch-up the slip
-            # after a sibling closes. Bounded by the window's start so a
-            # flat loan settled years ago cannot pause a brand-new one.
-            paid = sum(self.env['efs.loan.payment'].sudo().search([
-                ('loan_id.employee_id', '=', self._origin.id),
-                ('loan_id.repayment_period', '=', 'payslip'),
-                ('state', '=', 'posted'),
-                ('date', '>=', earliest),
-            ]).mapped('amount'))
-            pot = max(per * elapsed - paid, 0.0)
-        else:
-            pot = per
         total_balance = sum((loan.balance or 0.0) for loan in flat_loans)
-        pot = min(pot, total_balance)
-        # The closing stretch snaps to zero: when paying the scheduled pot
-        # would leave a tail smaller than one instalment (balance 1,500 on a
-        # 1,000 instalment leaves a ragged 500), the pot asks for the whole
-        # balance so a slip that can afford it closes the loan outright
-        # instead of dragging the tail one more cutoff. A slip that cannot
-        # afford it still deducts whole instalments only -- the floor in
-        # _loan_deduction_total sees the larger pot and takes 1,000, so the
-        # employee keeps their change either way. An exact multiple of the
-        # instalment does not snap; it simply pays out in clean units.
+        pot = min(per, total_balance)
         if per > 0.005 and 0.005 < total_balance - pot < per - 0.005:
             pot = total_balance
+        formula = loan_policy.flat_formula(self.env)
+        if formula:
+            localdict = {
+                'result': pot, 'per': per, 'balance': total_balance,
+                'loans': flat_loans, 'employee': self,
+                'date_from': period_from, 'date_to': period_to,
+            }
+            try:
+                safe_eval(formula, localdict, mode='exec', nocopy=True)
+                pot = float(localdict.get('result') or 0.0)
+            except Exception:
+                _logger.warning(
+                    'The Flat Deduction Formula raised; using the built-in '
+                    'figure of %.2f instead.', pot, exc_info=True)
+        pot = max(min(pot, total_balance), 0.0)
         if pot <= 0.005:
             return []
         return self._loan_split_equally(

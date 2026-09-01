@@ -98,11 +98,24 @@ class ResConfigSettings(models.TransientModel):
     ], string='Cutoff Cadence',
         config_parameter=loan_policy.PARAM_PAYSLIP_CADENCE,
         default=loan_policy.DEFAULT_PAYSLIP_CADENCE,
-        help='The payroll cutoff calendar that Per Payslip (flat) loans '
-             'follow: one instalment falls due each time a cutoff closes. '
-             'Semi-monthly closes on the 15th and the last day of the '
-             'month. Only used by flat loans; prorated periods carry their '
-             'own calendar.')
+        help='How many payslips a month holds, for the monthly-equivalent '
+             'maths on Per Payslip (flat) loans: the capacity check and the '
+             'term/interest figures. The deduction itself is always one '
+             'instalment per payslip, whatever the cadence.')
+    loan_flat_formula = fields.Text(
+        string='Flat Deduction Formula',
+        config_parameter=loan_policy.PARAM_FLAT_FORMULA,
+        help='Optional salary-rule-style Python overriding what a payslip '
+             'deducts for flat loans. Assign to `result`; available: '
+             '`result` (the built-in figure), `per` (the instalment), '
+             '`balance` (total outstanding across flat loans), `loans`, '
+             '`employee`, `date_from`, `date_to`. Example:\n'
+             'result = min(per * 2, balance)\n'
+             'Leave empty for the standard rule (one instalment per '
+             'payslip; a closing balance under two instalments is taken in '
+             'full). The pay-availability cap and whole-instalment floor '
+             'still apply after the formula. A formula that raises is '
+             'logged and ignored so payroll never breaks on a typo.')
     loan_repayment_amount = fields.Float(
         string='Default Repayment per Period',
         config_parameter=loan_policy.PARAM_REPAYMENT_AMOUNT,

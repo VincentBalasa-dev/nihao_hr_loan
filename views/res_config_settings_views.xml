@@ -81,8 +81,14 @@
                             <field name="loan_repayment_period" class="oe_inline"/>
                         </setting>
                         <setting string="Cutoff Cadence"
-                                 help="The payroll cutoff calendar Per Payslip (flat) loans follow: one instalment falls due each time a cutoff closes. Semi-monthly closes on the 15th and the last day of the month.">
+                                 help="How many payslips a month holds — used for the monthly-equivalent maths on flat loans (capacity check, term figures). The deduction itself is always one instalment per payslip.">
                             <field name="loan_payslip_cadence" class="oe_inline"/>
+                        </setting>
+                        <setting string="Flat Deduction Formula"
+                                 help="Optional Python, salary-rule style, overriding what a payslip deducts for flat loans. Assign to `result`; you get `result` (built-in figure), `per`, `balance`, `loans`, `employee`, `date_from`, `date_to`. Empty = the standard rule. Errors are logged and ignored.">
+                            <field name="loan_flat_formula" widget="ace"
+                                   options="{'mode': 'python'}"
+                                   placeholder="result = min(per, balance)"/>
                         </setting>
                         <setting string="Default Repayment per Period"
                                  help="On a fixed basis. Offered on a new application and editable per loan.">
