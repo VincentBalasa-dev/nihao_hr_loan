@@ -11,6 +11,8 @@ installed. The bridge only turns its answer into a payslip line.
 """
 
 import logging
+from calendar import monthrange
+from datetime import date, timedelta
 
 from odoo import api, fields, models
 from odoo.tools.safe_eval import safe_eval
@@ -279,15 +281,46 @@ class HrEmployee(models.Model):
         """
         per = max((loan.repayment_amount or 0.0) for loan in flat_loans)
         total_balance = sum((loan.balance or 0.0) for loan in flat_loans)
-        pot = min(per, total_balance)
-        if per > 0.005 and 0.005 < total_balance - pot < per - 0.005:
+
+        # Which cutoff days this slip's period covers. Precomputed booleans
+        # so neither the Deduct On setting nor a client formula needs to do
+        # calendar arithmetic. A slip with no dates covers both -- the
+        # employee-form rate display and any dateless caller keep working.
+        covers_15th = covers_month_end = True
+        if period_from and period_to:
+            covers_15th = covers_month_end = False
+            cursor, fence = period_from, min(
+                period_to, period_from + timedelta(days=366))
+            while cursor <= fence:
+                if cursor.day == 15:
+                    covers_15th = True
+                if cursor.day == monthrange(cursor.year, cursor.month)[1]:
+                    covers_month_end = True
+                cursor += timedelta(days=1)
+
+        deduct_on = loan_policy.flat_deduct_on(self.env)
+        timing_ok = {
+            'always': True,
+            'fifteenth': covers_15th,
+            'month_end': covers_month_end,
+            'either': covers_15th or covers_month_end,
+        }[deduct_on]
+
+        pot = min(per, total_balance) if timing_ok else 0.0
+        if timing_ok and per > 0.005 \
+                and 0.005 < total_balance - pot < per - 0.005:
             pot = total_balance
         formula = loan_policy.flat_formula(self.env)
         if formula:
             localdict = {
                 'result': pot, 'per': per, 'balance': total_balance,
+                'paid': sum(loan.total_paid for loan in flat_loans),
                 'loans': flat_loans, 'employee': self,
                 'date_from': period_from, 'date_to': period_to,
+                'covers_15th': covers_15th,
+                'covers_month_end': covers_month_end,
+                'date': date, 'timedelta': timedelta,
+                'monthrange': monthrange,
             }
             try:
                 safe_eval(formula, localdict, mode='exec', nocopy=True)

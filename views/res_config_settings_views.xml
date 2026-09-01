@@ -84,11 +84,15 @@
                                  help="How many payslips a month holds — used for the monthly-equivalent maths on flat loans (capacity check, term figures). The deduction itself is always one instalment per payslip.">
                             <field name="loan_payslip_cadence" class="oe_inline"/>
                         </setting>
+                        <setting string="Deduct On"
+                                 help="When a flat instalment is taken: every payslip, or only slips covering the 15th and/or month-end — for clients whose loans are paid once a month or on one specific cutoff.">
+                            <field name="loan_flat_deduct_on" class="oe_inline"/>
+                        </setting>
                         <setting string="Flat Deduction Formula"
-                                 help="Optional Python, salary-rule style, overriding what a payslip deducts for flat loans. Assign to `result`; you get `result` (built-in figure), `per`, `balance`, `loans`, `employee`, `date_from`, `date_to`. Empty = the standard rule. Errors are logged and ignored.">
+                                 help="Optional Python, salary-rule style, overriding what a payslip deducts for flat loans. Assign to `result`; you get `result` (built-in figure), `per`, `balance`, `paid`, `loans`, `employee`, `date_from`, `date_to`, `covers_15th`, `covers_month_end`, plus `date`, `timedelta`, `monthrange`. Example: result = per if covers_month_end else 0. Empty = the standard rule. Errors are logged and ignored.">
                             <field name="loan_flat_formula" widget="ace"
                                    options="{'mode': 'python'}"
-                                   placeholder="result = min(per, balance)"/>
+                                   placeholder="result = per if covers_month_end else 0"/>
                         </setting>
                         <setting string="Default Repayment per Period"
                                  help="On a fixed basis. Offered on a new application and editable per loan.">

@@ -261,6 +261,20 @@ def flat_formula(env):
     return str(_raw(env, PARAM_FLAT_FORMULA, '') or '').strip()
 
 
+# When a flat instalment is taken. `always` deducts on every payslip; the
+# others deduct only on a slip whose period covers that day of the month --
+# the way a client that pays loans once a month (month-end) or on one
+# specific cutoff says it. The formula above can still override the figure
+# either way.
+PARAM_FLAT_DEDUCT_ON = 'nihao_hr_loan.flat_deduct_on'
+DEDUCT_ON = ('always', 'fifteenth', 'month_end', 'either')
+
+
+def flat_deduct_on(env):
+    raw = str(_raw(env, PARAM_FLAT_DEDUCT_ON, 'always') or '').strip().lower()
+    return raw if raw in DEDUCT_ON else 'always'
+
+
 def repayment_amount(env):
     """The default fixed instalment. Falls back to the pre-1.1 key."""
     value = _number(env, PARAM_REPAYMENT_AMOUNT, 0.0)

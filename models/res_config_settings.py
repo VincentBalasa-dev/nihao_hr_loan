@@ -102,6 +102,18 @@ class ResConfigSettings(models.TransientModel):
              'maths on Per Payslip (flat) loans: the capacity check and the '
              'term/interest figures. The deduction itself is always one '
              'instalment per payslip, whatever the cadence.')
+    loan_flat_deduct_on = fields.Selection([
+        ('always', 'Every payslip'),
+        ('fifteenth', 'Only payslips covering the 15th'),
+        ('month_end', 'Only payslips covering month-end'),
+        ('either', 'Payslips covering the 15th or month-end'),
+    ], string='Deduct On',
+        config_parameter=loan_policy.PARAM_FLAT_DEDUCT_ON, default='always',
+        help='When a flat instalment is taken. "Every payslip" deducts on '
+             'each computed slip; the others deduct only on a slip whose '
+             'period covers that day of the month - for clients whose loans '
+             'are paid once a month or on one specific cutoff. The formula '
+             'below can still override the figure either way.')
     # Char, not Text: res.config.settings only round-trips boolean / number /
     # char / selection / many2one fields through config_parameter, and a
     # Text here crashes the whole Settings page at default_get. Char holds
