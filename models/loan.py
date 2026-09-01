@@ -344,10 +344,18 @@ class Loan(models.Model):
 
     def _period_days(self):
         self.ensure_one()
+        # A flat loan's period IS the payroll cutoff; its length comes from
+        # the cadence setting, not from the loan.
+        if self.repayment_period == 'payslip':
+            return loan_policy.PERIOD_DAYS.get(
+                loan_policy.payslip_cadence(self.env), 365.25 / 24)
         return loan_policy.PERIOD_DAYS.get(self.repayment_period, 7.0)
 
     def _periods_per_month(self):
         self.ensure_one()
+        if self.repayment_period == 'payslip':
+            return loan_policy.PERIODS_PER_MONTH.get(
+                loan_policy.payslip_cadence(self.env), 2.0)
         return loan_policy.PERIODS_PER_MONTH.get(
             self.repayment_period, loan_policy.WEEKS_PER_MONTH)
 

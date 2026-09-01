@@ -91,6 +91,18 @@ class ResConfigSettings(models.TransientModel):
              'mean the same thing on any payroll schedule. Per Payslip is '
              'flat: the whole instalment comes out of every payslip, '
              'whatever its length. A loan product may override this.')
+    loan_payslip_cadence = fields.Selection([
+        ('semimonth', 'Semi-monthly (15th and month-end)'),
+        ('week', 'Weekly'),
+        ('month', 'Monthly (month-end)'),
+    ], string='Cutoff Cadence',
+        config_parameter=loan_policy.PARAM_PAYSLIP_CADENCE,
+        default=loan_policy.DEFAULT_PAYSLIP_CADENCE,
+        help='The payroll cutoff calendar that Per Payslip (flat) loans '
+             'follow: one instalment falls due each time a cutoff closes. '
+             'Semi-monthly closes on the 15th and the last day of the '
+             'month. Only used by flat loans; prorated periods carry their '
+             'own calendar.')
     loan_repayment_amount = fields.Float(
         string='Default Repayment per Period',
         config_parameter=loan_policy.PARAM_REPAYMENT_AMOUNT,

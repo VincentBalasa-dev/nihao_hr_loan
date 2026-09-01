@@ -271,7 +271,12 @@ class HrEmployee(models.Model):
         starts = [loan.start_date for loan in flat_loans if loan.start_date]
         if period_to and starts:
             earliest = min(starts)
-            elapsed = max((period_to - earliest).days // 7 + 1, 0)
+            # One instalment falls due per CUTOFF CLOSE on the payroll's
+            # cadence (Settings; semi-monthly = the 15th and month-end), so
+            # a monthly slip against a mid-month start owes exactly the
+            # cutoffs it contains -- not a week count.
+            elapsed = loan_policy.cutoff_count(
+                earliest, period_to, loan_policy.payslip_cadence(self.env))
             # What has been paid against the shared schedule: every posted
             # payment on ANY of the employee's flat loans since the window
             # opened -- not just the loans still running. A loan that

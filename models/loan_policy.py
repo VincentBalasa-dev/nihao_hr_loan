@@ -20,6 +20,8 @@ model and the payroll bridge can all reach them without importing each other.
 """
 
 import logging
+from calendar import monthrange
+from datetime import date
 
 _logger = logging.getLogger(__name__)
 
@@ -205,17 +207,17 @@ DEFAULT_REPAYMENT_PERCENT = 10.0
 
 BASES = ('fixed', 'percent')
 # 'payslip' is the flat option: the instalment comes out of every payslip
-# whole, whatever span of days the slip covers -- no pro-rating. The maths
-# that needs it on a calendar anyway (term, interest, the monthly capacity
-# check) treats it as weekly-equivalent, because a flat per-payslip figure
-# has no calendar of its own and this company's payroll cuts off weekly.
-# On a slower cadence those derived figures overstate; the deduction
-# itself is exact either way.
+# whole, whatever span of days the slip covers -- no pro-rating. Its
+# schedule (how many instalments have fallen due by a given date) and its
+# calendar-equivalent maths (term, interest, the monthly capacity check)
+# follow the CUTOFF CADENCE setting below, because a flat per-payslip
+# figure has no calendar of its own -- the payroll's cutoff calendar is
+# its calendar.
 PERIODS = ('week', 'semimonth', 'month', 'payslip')
-PERIOD_DAYS = {'week': 7.0, 'semimonth': 365.25 / 24, 'month': 365.25 / 12,
-               'payslip': 7.0}
-PERIODS_PER_MONTH = {'week': WEEKS_PER_MONTH, 'semimonth': 2.0, 'month': 1.0,
-                     'payslip': WEEKS_PER_MONTH}
+# 'payslip' has no row here: its day-length and per-month figures follow the
+# cutoff cadence setting -- see Loan._period_days / _periods_per_month.
+PERIOD_DAYS = {'week': 7.0, 'semimonth': 365.25 / 24, 'month': 365.25 / 12}
+PERIODS_PER_MONTH = {'week': WEEKS_PER_MONTH, 'semimonth': 2.0, 'month': 1.0}
 PERIOD_LABELS = {'week': 'Weekly', 'semimonth': 'Semi-monthly',
                  'month': 'Monthly', 'payslip': 'Per Payslip (flat)'}
 
@@ -228,6 +230,51 @@ def repayment_basis(env):
 def repayment_period(env):
     raw = str(_raw(env, PARAM_REPAYMENT_PERIOD, 'week') or '').strip().lower()
     return raw if raw in PERIODS else 'week'
+
+
+# ── The payroll's cutoff calendar, for flat (per-payslip) loans ──────────────
+# One flat instalment falls due per CUTOFF. What a cutoff is -- a half-month
+# (paydays on the 15th and month-end), a week, a month -- is the company's
+# payroll calendar, not something a loan can know on its own.
+PARAM_PAYSLIP_CADENCE = 'nihao_hr_loan.payslip_cadence'
+CADENCES = ('week', 'semimonth', 'month')
+DEFAULT_PAYSLIP_CADENCE = 'semimonth'
+
+
+def payslip_cadence(env):
+    raw = str(_raw(env, PARAM_PAYSLIP_CADENCE,
+                   DEFAULT_PAYSLIP_CADENCE) or '').strip().lower()
+    return raw if raw in CADENCES else DEFAULT_PAYSLIP_CADENCE
+
+
+def cutoff_count(start, end, cadence):
+    """How many cutoffs END inside [start, end], inclusive.
+
+    This is the flat loan's schedule: one instalment falls due each time a
+    cutoff closes. Semi-monthly cutoffs close on the 15th and the last day
+    of each month, monthly ones on the last day; weekly ones are counted
+    arithmetically (a closing day per 7 days from the start). A slip
+    covering Sep 1-30 against a loan started Sep 15 therefore owes two
+    semi-monthly instalments -- the 9/15 and 9/30 closes -- not the three
+    week-marks the old weekly-only clock counted.
+    """
+    if end < start:
+        return 0
+    if cadence == 'week':
+        return (end - start).days // 7 + 1
+    count = 0
+    cursor = date(start.year, start.month, 1)
+    while cursor <= end:
+        last_day = date(cursor.year, cursor.month,
+                        monthrange(cursor.year, cursor.month)[1])
+        closes = [last_day] if cadence == 'month' else [
+            date(cursor.year, cursor.month, 15), last_day]
+        for close in closes:
+            if start <= close <= end:
+                count += 1
+        cursor = date(cursor.year + (cursor.month == 12),
+                      cursor.month % 12 + 1, 1)
+    return count
 
 
 def repayment_amount(env):

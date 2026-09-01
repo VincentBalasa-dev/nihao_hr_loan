@@ -77,8 +77,12 @@
                             <field name="loan_repayment_basis" class="oe_inline"/>
                         </setting>
                         <setting string="Repayment Period"
-                                 help="How often an instalment falls due. Payroll prorates by the days each payslip covers, so a monthly figure on a semi-monthly payroll comes out as roughly half per slip. A loan product may override this.">
+                                 help="How often an instalment falls due. Weekly/semi-monthly/monthly prorate by the days each payslip covers; Per Payslip (flat) takes the whole instalment out of every cutoff. A loan product may override this.">
                             <field name="loan_repayment_period" class="oe_inline"/>
+                        </setting>
+                        <setting string="Cutoff Cadence"
+                                 help="The payroll cutoff calendar Per Payslip (flat) loans follow: one instalment falls due each time a cutoff closes. Semi-monthly closes on the 15th and the last day of the month.">
+                            <field name="loan_payslip_cadence" class="oe_inline"/>
                         </setting>
                         <setting string="Default Repayment per Period"
                                  help="On a fixed basis. Offered on a new application and editable per loan.">
