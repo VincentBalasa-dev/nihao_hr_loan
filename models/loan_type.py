@@ -109,6 +109,7 @@ class LoanType(models.Model):
         ('week', 'Weekly'),
         ('semimonth', 'Semi-monthly'),
         ('month', 'Monthly'),
+        ('payslip', 'Per Payslip (flat)'),
     ], string='Repayment Period', required=True, default='default')
     default_repayment_amount = fields.Monetary(
         string='Default Repayment per Period', currency_field='currency_id',

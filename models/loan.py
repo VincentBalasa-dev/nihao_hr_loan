@@ -41,6 +41,7 @@ PERIOD_SELECTION = [
     ('week', 'Weekly'),
     ('semimonth', 'Semi-monthly'),
     ('month', 'Monthly'),
+    ('payslip', 'Per Payslip (flat)'),
 ]
 
 # The loan fields payroll reads when it computes a DED_LOAN line (see

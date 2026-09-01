@@ -204,10 +204,20 @@ PARAM_REPAYMENT_PERCENT = 'nihao_hr_loan.repayment_percent'
 DEFAULT_REPAYMENT_PERCENT = 10.0
 
 BASES = ('fixed', 'percent')
-PERIODS = ('week', 'semimonth', 'month')
-PERIOD_DAYS = {'week': 7.0, 'semimonth': 365.25 / 24, 'month': 365.25 / 12}
-PERIODS_PER_MONTH = {'week': WEEKS_PER_MONTH, 'semimonth': 2.0, 'month': 1.0}
-PERIOD_LABELS = {'week': 'Weekly', 'semimonth': 'Semi-monthly', 'month': 'Monthly'}
+# 'payslip' is the flat option: the instalment comes out of every payslip
+# whole, whatever span of days the slip covers -- no pro-rating. The maths
+# that needs it on a calendar anyway (term, interest, the monthly capacity
+# check) treats it as weekly-equivalent, because a flat per-payslip figure
+# has no calendar of its own and this company's payroll cuts off weekly.
+# On a slower cadence those derived figures overstate; the deduction
+# itself is exact either way.
+PERIODS = ('week', 'semimonth', 'month', 'payslip')
+PERIOD_DAYS = {'week': 7.0, 'semimonth': 365.25 / 24, 'month': 365.25 / 12,
+               'payslip': 7.0}
+PERIODS_PER_MONTH = {'week': WEEKS_PER_MONTH, 'semimonth': 2.0, 'month': 1.0,
+                     'payslip': WEEKS_PER_MONTH}
+PERIOD_LABELS = {'week': 'Weekly', 'semimonth': 'Semi-monthly',
+                 'month': 'Monthly', 'payslip': 'Per Payslip (flat)'}
 
 
 def repayment_basis(env):

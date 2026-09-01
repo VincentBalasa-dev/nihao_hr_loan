@@ -216,22 +216,45 @@ class HrEmployee(models.Model):
             if loan.start_date and period_to \
                     and loan.start_date > period_to:
                 continue
-            # A loan starting mid-period is charged for its own days only.
-            # Without this clamp a monthly slip qualifying by a single day
-            # charged the whole month: a loan starting the 15th deducted
-            # 30/7 weeks on a Sep 1-30 slip instead of 16/7. The days that
-            # count run from the later of the period start and the loan
-            # start.
-            loan_days = days
-            if days is not None and loan.start_date \
-                    and loan.start_date > period_from:
-                loan_days = max((period_to - loan.start_date).days + 1, 0)
-            # Each loan carries its own period (weekly, semi-monthly,
-            # monthly). The instalment is scaled by the share of one period
-            # the payslip covers, so a monthly figure on a semi-monthly
-            # payroll comes out as roughly half per slip and exactly the
-            # whole over a month. With no dates, one full period is assumed.
-            share = 1.0 if loan_days is None else loan_days / loan._period_days()
+            if loan.repayment_period == 'payslip':
+                # Flat, and schedule-driven: what this slip owes is whatever
+                # the schedule says should have been paid by its end, minus
+                # what actually has been. One instalment falls due per week
+                # from the start date (the payslip cadence this option
+                # assumes), so a cutoff that deducted nothing -- no pay,
+                # slip skipped -- rolls its instalment onto the next slip
+                # rather than onto the end of the loan. A borrower who paid
+                # ahead by hand owes nothing until the schedule catches up.
+                per = loan.repayment_amount or 0.0
+                if period_to and loan.start_date:
+                    elapsed = max(
+                        (period_to - loan.start_date).days // 7 + 1, 0)
+                    due = min(max(per * elapsed - loan.total_paid, 0.0),
+                              loan.balance or 0.0)
+                else:
+                    due = min(per, loan.balance or 0.0)
+                if due > 0.005:
+                    result.append((loan, round(due, 2)))
+                continue
+            else:
+                # A loan starting mid-period is charged for its own days
+                # only. Without this clamp a monthly slip qualifying by a
+                # single day charged the whole month: a loan starting the
+                # 15th deducted 30/7 weeks on a Sep 1-30 slip instead of
+                # 16/7. The days that count run from the later of the
+                # period start and the loan start.
+                loan_days = days
+                if days is not None and loan.start_date \
+                        and loan.start_date > period_from:
+                    loan_days = max((period_to - loan.start_date).days + 1, 0)
+                # Each loan carries its own period (weekly, semi-monthly,
+                # monthly). The instalment is scaled by the share of one
+                # period the payslip covers, so a monthly figure on a
+                # semi-monthly payroll comes out as roughly half per slip
+                # and exactly the whole over a month. With no dates, one
+                # full period is assumed.
+                share = (1.0 if loan_days is None
+                         else loan_days / loan._period_days())
             due = min((loan.repayment_amount or 0.0) * share,
                       loan.balance or 0.0)
             if due > 0.005:
@@ -249,24 +272,41 @@ class HrEmployee(models.Model):
         repayment, it is a payroll error (and, for an employee, a Labor
         Code problem). A slip with no earnings therefore deducts nothing.
 
-        The shortfall is deliberately not tracked anywhere. The balance is
-        derived from posted repayments, so an under-deducted period simply
-        leaves the balance higher and the loan runs a period longer --
-        no carry-forward bookkeeping to drift.
+        A flat (per-payslip) loan is additionally taken in WHOLE instalments
+        only: owed 2,000 against 1,300 of pay deducts 1,000 and the employee
+        keeps the 300 -- payroll does not nibble a partial instalment out of
+        someone's change. The exception is the scheduled remainder itself: a
+        final 300 that is all the loan still asks for is taken in full. A
+        prorated loan (week/semimonth/month) still caps to the peso, since
+        its instalment is already a day-count fraction.
+
+        The shortfall needs no bookkeeping of its own: the balance is
+        derived from posted repayments, and a flat loan's per-slip due is
+        schedule-minus-paid (see ``_loan_deductions``), so whatever a slip
+        could not give is asked for again on the next one.
 
         ``None`` means no cap, which keeps the employee-form smart button
         (a rate, not a slip) and any caller that has no payslip context
         working exactly as before.
         """
         self.ensure_one()
-        total = round(
-            sum(amount for _loan, amount
-                in self._loan_deductions(date_from, date_to)),
-            2,
-        )
-        if available is not None:
-            total = min(total, round(max(available, 0.0), 2))
-        return total
+        pairs = self._loan_deductions(date_from, date_to)
+        if available is None:
+            return round(sum(amount for _loan, amount in pairs), 2)
+        remaining = round(max(available, 0.0), 2)
+        total = 0.0
+        for loan, due in pairs:
+            take = min(due, remaining)
+            if take < due - 0.005 and loan.repayment_period == 'payslip':
+                per = loan.repayment_amount or 0.0
+                if per > 0:
+                    take = int(take / per) * per
+            take = round(take, 2)
+            if take <= 0:
+                continue
+            total += take
+            remaining = round(remaining - take, 2)
+        return round(total, 2)
 
     def action_open_loans(self):
         """The Loans smart button on the employee form."""

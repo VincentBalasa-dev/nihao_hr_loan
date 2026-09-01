@@ -38,7 +38,7 @@ migration.
     # construct here is 18-form: `_sql_constraints` lists rather than
     # `models.Constraint`, `groups_id` rather than `group_ids`, and
     # `safe_eval(..., nocopy=True)` because 18 still copies the context.
-    'version': '18.0.1.2.6',
+    'version': '18.0.1.2.7',
     'category': 'Human Resources',
     'author': 'NihaoExpress',
     'website': 'https://odoo-demo.auditninjaz.com',

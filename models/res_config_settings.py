@@ -83,11 +83,14 @@ class ResConfigSettings(models.TransientModel):
         ('week', 'Weekly'),
         ('semimonth', 'Semi-monthly'),
         ('month', 'Monthly'),
+        ('payslip', 'Per Payslip (flat)'),
     ], string='Repayment Period',
         config_parameter=loan_policy.PARAM_REPAYMENT_PERIOD, default='week',
-        help='How often an instalment falls due. Payroll prorates by the '
-             'days each payslip covers, so this means the same thing on any '
-             'payroll schedule. A loan product may override this.')
+        help='How often an instalment falls due. Weekly / semi-monthly / '
+             'monthly are prorated by the days each payslip covers, so they '
+             'mean the same thing on any payroll schedule. Per Payslip is '
+             'flat: the whole instalment comes out of every payslip, '
+             'whatever its length. A loan product may override this.')
     loan_repayment_amount = fields.Float(
         string='Default Repayment per Period',
         config_parameter=loan_policy.PARAM_REPAYMENT_AMOUNT,
