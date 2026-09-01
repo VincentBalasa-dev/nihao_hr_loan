@@ -11,5 +11,3 @@ access_efs_loan_reject_wizard,efs.loan.reject.wizard HR officer,model_efs_loan_r
 access_efs_loan_tier_all,efs.loan.eligibility.tier read,model_efs_loan_eligibility_tier,base.group_user,1,0,0,0
 access_efs_loan_tier_manager,efs.loan.eligibility.tier manager,model_efs_loan_eligibility_tier,hr.group_hr_manager,1,1,1,1
 access_efs_loan_cancel_wizard_employee,efs.loan.cancel.wizard employee,model_efs_loan_cancel_wizard,base.group_user,1,1,1,1
-access_efs_loan_repayment_rule_all,efs.loan.repayment.rule read,model_efs_loan_repayment_rule,base.group_user,1,0,0,0
-access_efs_loan_repayment_rule_manager,efs.loan.repayment.rule manage,model_efs_loan_repayment_rule,hr.group_hr_manager,1,1,1,1

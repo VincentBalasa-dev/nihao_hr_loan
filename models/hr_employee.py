@@ -11,11 +11,8 @@ installed. The bridge only turns its answer into a payslip line.
 """
 
 import logging
-from calendar import monthrange
-from datetime import date, timedelta
 
 from odoo import api, fields, models
-from odoo.tools.safe_eval import safe_eval
 
 from . import loan_policy
 
@@ -254,24 +251,7 @@ class HrEmployee(models.Model):
         return result
 
     def _loan_flat_shares(self, flat_loans, period_from, period_to):
-        """Flat loans grouped by repayment rule; each group is its own pot.
-
-        Loans on the same rule share its instalment (the built-in
-        one-per-employee behaviour); loans on different rules run their own
-        arithmetic side by side. Loans with no rule form the legacy group,
-        governed by the built-in figure and the Settings knobs.
-        """
-        groups = {}
-        for loan in flat_loans:
-            groups.setdefault(loan.repayment_rule_id, []).append(loan)
-        shares = []
-        for rule, group_loans in groups.items():
-            shares += self._loan_flat_pot(
-                rule, group_loans, period_from, period_to)
-        return shares
-
-    def _loan_flat_pot(self, rule, flat_loans, period_from, period_to):
-        """One rule group's pot for this slip, split across its loans.
+        """Flat loans share one instalment PER PAYSLIP, split equally.
 
         The instalment belongs to the EMPLOYEE, not to each loan: holding
         two flat loans does not double what a payslip gives up. Every
@@ -285,10 +265,8 @@ class HrEmployee(models.Model):
         Two refinements on the plain figure. The closing stretch snaps: a
         balance under two instalments (1,500, or a final 983) is asked in
         full, so a slip that can afford it closes the loan instead of
-        dragging a sub-instalment tail. And the figure is overridable from
-        Settings ("Flat Deduction Formula") with salary-rule-style Python
-        for deployments whose policy outgrows the built-in rule; a broken
-        formula logs and falls back rather than breaking payroll.
+        dragging a sub-instalment tail. An exact multiple of the instalment
+        does not snap; it pays out in clean units.
 
         The pot is then split equally across the flat loans -- 1,000 over
         two loans credits 500 to each balance -- with a loan that cannot
@@ -298,69 +276,9 @@ class HrEmployee(models.Model):
         """
         per = max((loan.repayment_amount or 0.0) for loan in flat_loans)
         total_balance = sum((loan.balance or 0.0) for loan in flat_loans)
-
-        # Which cutoff days this slip's period covers. Precomputed booleans
-        # so neither the Deduct On setting nor a client formula needs to do
-        # calendar arithmetic. A slip with no dates covers both -- the
-        # employee-form rate display and any dateless caller keep working.
-        covers_15th = covers_month_end = True
-        if period_from and period_to:
-            covers_15th = covers_month_end = False
-            cursor, fence = period_from, min(
-                period_to, period_from + timedelta(days=366))
-            while cursor <= fence:
-                if cursor.day == 15:
-                    covers_15th = True
-                if cursor.day == monthrange(cursor.year, cursor.month)[1]:
-                    covers_month_end = True
-                cursor += timedelta(days=1)
-
-        def built_in(gate=True):
-            base = min(per, total_balance) if gate else 0.0
-            if gate and per > 0.005 \
-                    and 0.005 < total_balance - base < per - 0.005:
-                base = total_balance
-            return base
-
-        localdict = {
-            'per': per, 'balance': total_balance,
-            'paid': sum(loan.total_paid for loan in flat_loans),
-            'loans': flat_loans, 'employee': self,
-            'date_from': period_from, 'date_to': period_to,
-            'covers_15th': covers_15th,
-            'covers_month_end': covers_month_end,
-            'date': date, 'timedelta': timedelta,
-            'monthrange': monthrange,
-        }
-
-        if rule:
-            # A rule owns its group completely -- figure AND timing. The
-            # Settings knobs (Deduct On, the global formula) govern only
-            # rule-less loans, or a client could never be sure which of the
-            # two layers decided a slip.
-            pot = rule._evaluate(
-                dict(localdict, result=built_in()), fallback=built_in())
-        else:
-            deduct_on = loan_policy.flat_deduct_on(self.env)
-            timing_ok = {
-                'always': True,
-                'fifteenth': covers_15th,
-                'month_end': covers_month_end,
-                'either': covers_15th or covers_month_end,
-            }[deduct_on]
-            pot = built_in(timing_ok)
-            formula = loan_policy.flat_formula(self.env)
-            if formula:
-                localdict['result'] = pot
-                try:
-                    safe_eval(formula, localdict, mode='exec', nocopy=True)
-                    pot = float(localdict.get('result') or 0.0)
-                except Exception:
-                    _logger.warning(
-                        'The Flat Deduction Formula raised; using the '
-                        'built-in figure of %.2f instead.', pot,
-                        exc_info=True)
-        pot = max(min(pot, total_balance), 0.0)
+        pot = min(per, total_balance)
+        if per > 0.005 and 0.005 < total_balance - pot < per - 0.005:
+            pot = total_balance
         if pot <= 0.005:
             return []
         return self._loan_split_equally(
