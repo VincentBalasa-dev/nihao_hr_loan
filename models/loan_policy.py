@@ -269,6 +269,11 @@ def flat_formula(env):
 PARAM_FLAT_DEDUCT_ON = 'nihao_hr_loan.flat_deduct_on'
 DEDUCT_ON = ('always', 'fifteenth', 'month_end', 'either')
 
+# The repayment rule offered on a new application (efs.loan.repayment.rule
+# id). Empty means new loans start with no rule and run the built-in figure
+# plus the Settings knobs above.
+PARAM_DEFAULT_REPAYMENT_RULE = 'nihao_hr_loan.default_repayment_rule_id'
+
 
 def flat_deduct_on(env):
     raw = str(_raw(env, PARAM_FLAT_DEDUCT_ON, 'always') or '').strip().lower()

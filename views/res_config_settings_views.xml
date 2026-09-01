@@ -84,6 +84,11 @@
                                  help="How many payslips a month holds — used for the monthly-equivalent maths on flat loans (capacity check, term figures). The deduction itself is always one instalment per payslip.">
                             <field name="loan_payslip_cadence" class="oe_inline"/>
                         </setting>
+                        <setting string="Default Repayment Rule"
+                                 help="Offered on every new application; the filer may pick another. Manage the catalogue in Loans → Configuration → Repayment Rules. Empty = built-in figure plus the knobs below.">
+                            <field name="loan_default_repayment_rule_id" class="oe_inline"
+                                   options="{'no_create': True}"/>
+                        </setting>
                         <setting string="Deduct On"
                                  help="When a flat instalment is taken: every payslip, or only slips covering the 15th and/or month-end — for clients whose loans are paid once a month or on one specific cutoff.">
                             <field name="loan_flat_deduct_on" class="oe_inline"/>

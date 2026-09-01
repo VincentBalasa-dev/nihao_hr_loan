@@ -131,6 +131,14 @@ class Loan(models.Model):
         help='What is repaid each period. Editable on a fixed basis -- the '
              'handbook lets an employee ask for more; computed from the '
              'principal on a percent basis.')
+    repayment_rule_id = fields.Many2one(
+        'efs.loan.repayment.rule', string='Repayment Rule', index=True,
+        tracking=True, ondelete='restrict',
+        default=lambda self: self._default_repayment_rule(),
+        help='The arithmetic deciding what each payslip deducts for a flat '
+             '(per-payslip) loan -- picked at application time, like a '
+             'salary rule. Flat loans sharing a rule share its instalment. '
+             'Empty runs the built-in figure and the company Settings.')
 
     term_periods = fields.Integer(
         string='Term (periods)', compute='_compute_amortization', store=True,
@@ -269,6 +277,17 @@ class Loan(models.Model):
     @api.model
     def _default_repayment_percent(self):
         return loan_policy.repayment_percent(self.env)
+
+    @api.model
+    def _default_repayment_rule(self):
+        rule_id = self.env['ir.config_parameter'].sudo().get_param(
+            loan_policy.PARAM_DEFAULT_REPAYMENT_RULE)
+        try:
+            rule = self.env['efs.loan.repayment.rule'].browse(
+                int(rule_id or 0))
+        except (TypeError, ValueError):
+            return False
+        return rule if rule.exists() else False
 
     @api.model
     def _default_start_date(self, approved_on=None):

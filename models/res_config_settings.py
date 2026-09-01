@@ -102,6 +102,13 @@ class ResConfigSettings(models.TransientModel):
              'maths on Per Payslip (flat) loans: the capacity check and the '
              'term/interest figures. The deduction itself is always one '
              'instalment per payslip, whatever the cadence.')
+    loan_default_repayment_rule_id = fields.Many2one(
+        'efs.loan.repayment.rule', string='Default Repayment Rule',
+        config_parameter=loan_policy.PARAM_DEFAULT_REPAYMENT_RULE,
+        help='Offered on every new application; the filer (or HR) may pick '
+             'another. Rules are managed in Loans > Configuration > '
+             'Repayment Rules, salary-rule style. Empty starts new loans '
+             'with no rule: the built-in figure plus the knobs below.')
     loan_flat_deduct_on = fields.Selection([
         ('always', 'Every payslip'),
         ('fifteenth', 'Only payslips covering the 15th'),

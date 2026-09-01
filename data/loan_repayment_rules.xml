@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Starter repayment rules. `noupdate="1"` — HR owns them from
+        Loans -> Configuration -> Repayment Rules once created; an upgrade
+        never rewrites a formula somebody tuned for the client.
+    -->
+    <data noupdate="1">
+        <record id="repayment_rule_standard" model="efs.loan.repayment.rule">
+            <field name="name">Standard — one instalment per payslip</field>
+            <field name="sequence">10</field>
+            <field name="note">Every computed payslip deducts one instalment. A closing balance under two instalments is taken in full so the loan can finish.</field>
+            <field name="amount_python_compute"># One instalment per payslip; a closing balance under two
+# instalments is taken in full so the loan can finish.
+result = min(per, balance)
+if 0.005 &lt; balance - result &lt; per:
+    result = balance</field>
+        </record>
+
+        <record id="repayment_rule_month_end" model="efs.loan.repayment.rule">
+            <field name="name">Once a month — month-end payslip</field>
+            <field name="sequence">20</field>
+            <field name="note">Deducts one instalment only on the payslip whose period covers the last day of a month; other slips take nothing.</field>
+            <field name="amount_python_compute">result = min(per, balance) if covers_month_end else 0
+if covers_month_end and 0.005 &lt; balance - result &lt; per:
+    result = balance</field>
+        </record>
+
+        <record id="repayment_rule_fifteenth" model="efs.loan.repayment.rule">
+            <field name="name">Once a month — 15th payslip</field>
+            <field name="sequence">30</field>
+            <field name="note">Deducts one instalment only on the payslip whose period covers the 15th; other slips take nothing.</field>
+            <field name="amount_python_compute">result = min(per, balance) if covers_15th else 0
+if covers_15th and 0.005 &lt; balance - result &lt; per:
+    result = balance</field>
+        </record>
+
+        <!-- New applications start on the standard rule. -->
+        <record id="param_default_repayment_rule" model="ir.config_parameter">
+            <field name="key">nihao_hr_loan.default_repayment_rule_id</field>
+            <field name="value" eval="str(ref('repayment_rule_standard'))"/>
+        </record>
+    </data>
+</odoo>
