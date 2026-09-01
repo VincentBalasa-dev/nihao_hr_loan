@@ -289,7 +289,19 @@ class HrEmployee(models.Model):
             pot = max(per * elapsed - paid, 0.0)
         else:
             pot = per
-        pot = min(pot, sum((loan.balance or 0.0) for loan in flat_loans))
+        total_balance = sum((loan.balance or 0.0) for loan in flat_loans)
+        pot = min(pot, total_balance)
+        # The closing stretch snaps to zero: when paying the scheduled pot
+        # would leave a tail smaller than one instalment (balance 1,500 on a
+        # 1,000 instalment leaves a ragged 500), the pot asks for the whole
+        # balance so a slip that can afford it closes the loan outright
+        # instead of dragging the tail one more cutoff. A slip that cannot
+        # afford it still deducts whole instalments only -- the floor in
+        # _loan_deduction_total sees the larger pot and takes 1,000, so the
+        # employee keeps their change either way. An exact multiple of the
+        # instalment does not snap; it simply pays out in clean units.
+        if per > 0.005 and 0.005 < total_balance - pot < per - 0.005:
+            pot = total_balance
         if pot <= 0.005:
             return []
         return self._loan_split_equally(
