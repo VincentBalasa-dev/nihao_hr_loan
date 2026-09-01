@@ -210,6 +210,7 @@ class HrEmployee(models.Model):
             days = max((period_to - period_from).days + 1, 0)
 
         result = []
+        flat_loans = []
         for loan in loans:
             if not loan.deduction_authorized:
                 continue
@@ -217,24 +218,9 @@ class HrEmployee(models.Model):
                     and loan.start_date > period_to:
                 continue
             if loan.repayment_period == 'payslip':
-                # Flat, and schedule-driven: what this slip owes is whatever
-                # the schedule says should have been paid by its end, minus
-                # what actually has been. One instalment falls due per week
-                # from the start date (the payslip cadence this option
-                # assumes), so a cutoff that deducted nothing -- no pay,
-                # slip skipped -- rolls its instalment onto the next slip
-                # rather than onto the end of the loan. A borrower who paid
-                # ahead by hand owes nothing until the schedule catches up.
-                per = loan.repayment_amount or 0.0
-                if period_to and loan.start_date:
-                    elapsed = max(
-                        (period_to - loan.start_date).days // 7 + 1, 0)
-                    due = min(max(per * elapsed - loan.total_paid, 0.0),
-                              loan.balance or 0.0)
-                else:
-                    due = min(per, loan.balance or 0.0)
-                if due > 0.005:
-                    result.append((loan, round(due, 2)))
+                # Flat loans share ONE instalment per cutoff between them --
+                # gathered here, priced together below.
+                flat_loans.append(loan)
                 continue
             else:
                 # A loan starting mid-period is charged for its own days
@@ -259,7 +245,97 @@ class HrEmployee(models.Model):
                       loan.balance or 0.0)
             if due > 0.005:
                 result.append((loan, round(due, 2)))
+        if flat_loans:
+            result = self._loan_flat_shares(flat_loans, period_to) + result
         return result
+
+    def _loan_flat_shares(self, flat_loans, period_to):
+        """Flat loans share one instalment per cutoff, split equally.
+
+        The instalment belongs to the EMPLOYEE, not to each loan: holding
+        two flat loans does not double what a payslip gives up. One
+        instalment (the largest among the flat loans, normally they are all
+        the same figure) falls due per week from the earliest start date;
+        what the schedule says should have been paid, minus what has been,
+        is the pot this slip owes. The pot is then split equally across the
+        flat loans -- 1,000 over two loans credits 500 to each balance --
+        with a loan that cannot absorb its share (almost repaid) spilling
+        the difference to the others, so a closed loan hands its half back
+        and the survivor starts receiving the full instalment.
+
+        Schedule-driven, so a cutoff that deducted nothing rolls forward to
+        the next slip rather than onto the end of the loans, and a borrower
+        who paid ahead by hand owes nothing until the schedule catches up.
+        """
+        per = max((loan.repayment_amount or 0.0) for loan in flat_loans)
+        starts = [loan.start_date for loan in flat_loans if loan.start_date]
+        if period_to and starts:
+            earliest = min(starts)
+            elapsed = max((period_to - earliest).days // 7 + 1, 0)
+            # What has been paid against the shared schedule: every posted
+            # payment on ANY of the employee's flat loans since the window
+            # opened -- not just the loans still running. A loan that
+            # settles mid-window leaves the pot, but the instalments it
+            # absorbed were the employee's weekly payments and still count,
+            # or the survivor would be billed a phantom catch-up the slip
+            # after a sibling closes. Bounded by the window's start so a
+            # flat loan settled years ago cannot pause a brand-new one.
+            paid = sum(self.env['efs.loan.payment'].sudo().search([
+                ('loan_id.employee_id', '=', self._origin.id),
+                ('loan_id.repayment_period', '=', 'payslip'),
+                ('state', '=', 'posted'),
+                ('date', '>=', earliest),
+            ]).mapped('amount'))
+            pot = max(per * elapsed - paid, 0.0)
+        else:
+            pot = per
+        pot = min(pot, sum((loan.balance or 0.0) for loan in flat_loans))
+        if pot <= 0.005:
+            return []
+        return self._loan_split_equally(
+            [(loan, loan.balance or 0.0) for loan in flat_loans], pot)
+
+    @api.model
+    def _loan_split_equally(self, caps, amount):
+        """Split ``amount`` equally across ``caps`` [(loan, cap), ...].
+
+        Each loan gets an even share, capped; whatever a capped loan cannot
+        take is re-split among the rest. Rounding drift (a third of 1,000 is
+        333.33 three times, a centavo short) lands on the first loan so the
+        shares always sum back to the amount actually taken. Returns
+        [(loan, share)] in the order given, zero shares dropped.
+        """
+        shares = {}
+        open_items = [(loan, cap) for loan, cap in caps if cap > 0.005]
+        remaining = amount
+        while remaining > 0.005 and open_items:
+            even = remaining / len(open_items)
+            progressed = False
+            still_open = []
+            for loan, cap in open_items:
+                got = shares.get(loan.id, 0.0)
+                take = min(even, cap - got)
+                if take > 0.005:
+                    shares[loan.id] = got + take
+                    remaining -= take
+                    progressed = True
+                if cap - shares.get(loan.id, 0.0) > 0.005:
+                    still_open.append((loan, cap))
+            open_items = still_open
+            if not progressed:
+                break
+        out = []
+        for loan, cap in caps:
+            share = round(shares.get(loan.id, 0.0), 2)
+            if share > 0.005:
+                out.append((loan, share))
+        allocated = round(amount - remaining, 2)
+        drift = round(allocated - sum(share for _loan, share in out), 2)
+        if out and abs(drift) >= 0.01:
+            loan0, share0 = out[0]
+            cap0 = dict((loan.id, cap) for loan, cap in caps)[loan0.id]
+            out[0] = (loan0, round(min(share0 + drift, cap0), 2))
+        return out
 
     def _loan_deduction_total(self, date_from=None, date_to=None,
                               available=None):
@@ -295,14 +371,27 @@ class HrEmployee(models.Model):
             return round(sum(amount for _loan, amount in pairs), 2)
         remaining = round(max(available, 0.0), 2)
         total = 0.0
-        for loan, due in pairs:
-            take = min(due, remaining)
-            if take < due - 0.005 and loan.repayment_period == 'payslip':
-                per = loan.repayment_amount or 0.0
-                if per > 0:
-                    take = int(take / per) * per
+        # The flat loans are one pot (see _loan_flat_shares), so the
+        # whole-instalment floor applies to the pot, not to each equal
+        # share -- two loans splitting 1,000 must not each be floored to 0.
+        # Flat first, prorated after, mirrored by _post_loan_repayments.
+        flat_pairs = [(loan, due) for loan, due in pairs
+                      if loan.repayment_period == 'payslip']
+        pot_due = round(sum(due for _loan, due in flat_pairs), 2)
+        if pot_due > 0.005:
+            per = max((loan.repayment_amount or 0.0)
+                      for loan, _due in flat_pairs)
+            take = min(pot_due, remaining)
+            if take < pot_due - 0.005 and per > 0:
+                take = int(take / per) * per
             take = round(take, 2)
-            if take <= 0:
+            total += take
+            remaining = round(remaining - take, 2)
+        for loan, due in pairs:
+            if loan.repayment_period == 'payslip':
+                continue
+            take = round(min(due, remaining), 2)
+            if take <= 0.005:
                 continue
             total += take
             remaining = round(remaining - take, 2)

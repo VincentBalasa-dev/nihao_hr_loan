@@ -158,23 +158,42 @@ class HrPayslip(models.Model):
             # covers; called without the period this defaults to one period and
             # would credit a single period against a whole month's deduction,
             # losing the difference.
-            for loan, due in slip.employee_id._loan_deductions(
-                    slip.date_from, slip.date_to):
+            pairs = slip.employee_id._loan_deductions(
+                slip.date_from, slip.date_to)
+            # Flat loans share one instalment and are credited by EQUAL
+            # split (1,000 over two loans posts 500 to each), mirroring how
+            # _loan_deduction_total priced them: flat pot first, prorated
+            # loans oldest-first from whatever pay remains.
+            flat_pairs = [(loan, due) for loan, due in pairs
+                          if loan.repayment_period == 'payslip']
+            allocations = []
+            pot_due = round(sum(due for _loan, due in flat_pairs), 2)
+            if pot_due > EPSILON and remaining > EPSILON:
+                flat_take = round(min(pot_due, remaining), 2)
+                allocations += slip.employee_id._loan_split_equally(
+                    [(loan, min(due, loan.balance or 0.0))
+                     for loan, due in flat_pairs], flat_take)
+                remaining = round(remaining - flat_take, 2)
+            for loan, due in pairs:
+                if loan.repayment_period == 'payslip':
+                    continue
                 if remaining <= EPSILON:
                     break
                 amount = min(due, remaining, loan.balance)
                 if amount <= EPSILON:
                     continue
+                allocations.append((loan, round(amount, 2)))
+                remaining = round(remaining - amount, 2)
+            for loan, amount in allocations:
                 Payment.create({
                     'loan_id': loan.id,
                     'date': slip.date_to or fields.Date.context_today(self),
-                    'amount': round(amount, 2),
+                    'amount': amount,
                     'reference': reference,
                     'payslip_id': slip.id,
                     'state': 'posted',
                     'payment_method': 'payroll',
                 })
-                remaining = round(remaining - amount, 2)
 
             if remaining > EPSILON:
                 # The rule deducted more than the open loans could absorb --
