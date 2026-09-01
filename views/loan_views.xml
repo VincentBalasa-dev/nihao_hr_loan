@@ -231,6 +231,10 @@
                             -->
                             <field name="repayment_amount"
                                    readonly="repayment_basis == 'percent' or state not in ('pending', 'endorsed')"/>
+                            <field name="repayment_rule_id"
+                                   invisible="repayment_period != 'payslip'"
+                                   readonly="state not in ('pending', 'endorsed')"
+                                   options="{'no_create': True, 'no_open': False}"/>
                             <!--
                                 The derived figures (interest, total payable,
                                 per-month, term) describe the APPROVED loan, not

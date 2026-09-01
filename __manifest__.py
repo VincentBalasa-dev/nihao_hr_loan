@@ -38,7 +38,7 @@ migration.
     # construct here is 18-form: `_sql_constraints` lists rather than
     # `models.Constraint`, `groups_id` rather than `group_ids`, and
     # `safe_eval(..., nocopy=True)` because 18 still copies the context.
-    'version': '18.0.1.2.14',
+    'version': '18.0.1.2.15',
     'category': 'Human Resources',
     'author': 'NihaoExpress',
     'website': 'https://odoo-demo.auditninjaz.com',
@@ -61,6 +61,7 @@ migration.
         'data/loan_parameters.xml',
         'data/loan_types.xml',
         'data/loan_tiers.xml',
+        'data/loan_repayment_rules.xml',
         'wizard/loan_reject_wizard_views.xml',
         'wizard/loan_cancel_wizard_views.xml',
         'views/loan_tier_views.xml',
@@ -69,6 +70,7 @@ migration.
         'views/loan_views.xml',
         'views/hr_employee_views.xml',
         'views/loan_menus.xml',
+        'views/loan_repayment_rule_views.xml',
         'views/hr_salary_rule_views.xml',
         'views/hr_payslip_views.xml',
     ],

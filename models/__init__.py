@@ -3,6 +3,7 @@ from . import loan_policy
 from . import loan_tier
 from . import loan_approval_mixin
 from . import loan_type
+from . import loan_repayment_rule
 from . import loan
 from . import hr_employee
 from . import hr_employee_public

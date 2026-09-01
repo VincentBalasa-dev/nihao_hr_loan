@@ -91,6 +91,54 @@ class ResConfigSettings(models.TransientModel):
              'mean the same thing on any payroll schedule. Per Payslip is '
              'flat: the whole instalment comes out of every payslip, '
              'whatever its length. A loan product may override this.')
+    loan_payslip_cadence = fields.Selection([
+        ('semimonth', 'Semi-monthly (15th and month-end)'),
+        ('week', 'Weekly'),
+        ('month', 'Monthly (month-end)'),
+    ], string='Cutoff Cadence',
+        config_parameter=loan_policy.PARAM_PAYSLIP_CADENCE,
+        default=loan_policy.DEFAULT_PAYSLIP_CADENCE,
+        help='How many payslips a month holds, for the monthly-equivalent '
+             'maths on Per Payslip (flat) loans: the capacity check and the '
+             'term/interest figures. The deduction itself is always one '
+             'instalment per payslip, whatever the cadence.')
+    loan_default_repayment_rule_id = fields.Many2one(
+        'efs.loan.repayment.rule', string='Default Repayment Rule',
+        config_parameter=loan_policy.PARAM_DEFAULT_REPAYMENT_RULE,
+        help='Offered on every new application; the filer (or HR) may pick '
+             'another. Rules are managed in Loans > Configuration > '
+             'Repayment Rules, salary-rule style. Empty starts new loans '
+             'with no rule: the built-in figure plus the knobs below.')
+    loan_flat_deduct_on = fields.Selection([
+        ('always', 'Every payslip'),
+        ('fifteenth', 'Only payslips covering the 15th'),
+        ('month_end', 'Only payslips covering month-end'),
+        ('either', 'Payslips covering the 15th or month-end'),
+    ], string='Deduct On',
+        config_parameter=loan_policy.PARAM_FLAT_DEDUCT_ON, default='always',
+        help='When a flat instalment is taken. "Every payslip" deducts on '
+             'each computed slip; the others deduct only on a slip whose '
+             'period covers that day of the month - for clients whose loans '
+             'are paid once a month or on one specific cutoff. The formula '
+             'below can still override the figure either way.')
+    # Char, not Text: res.config.settings only round-trips boolean / number /
+    # char / selection / many2one fields through config_parameter, and a
+    # Text here crashes the whole Settings page at default_get. Char holds
+    # a multi-line formula fine; the ace widget edits it.
+    loan_flat_formula = fields.Char(
+        string='Flat Deduction Formula',
+        config_parameter=loan_policy.PARAM_FLAT_FORMULA,
+        help='Optional salary-rule-style Python overriding what a payslip '
+             'deducts for flat loans. Assign to `result`; available: '
+             '`result` (the built-in figure), `per` (the instalment), '
+             '`balance` (total outstanding across flat loans), `loans`, '
+             '`employee`, `date_from`, `date_to`. Example:\n'
+             'result = min(per * 2, balance)\n'
+             'Leave empty for the standard rule (one instalment per '
+             'payslip; a closing balance under two instalments is taken in '
+             'full). The pay-availability cap and whole-instalment floor '
+             'still apply after the formula. A formula that raises is '
+             'logged and ignored so payroll never breaks on a typo.')
     loan_repayment_amount = fields.Float(
         string='Default Repayment per Period',
         config_parameter=loan_policy.PARAM_REPAYMENT_AMOUNT,
