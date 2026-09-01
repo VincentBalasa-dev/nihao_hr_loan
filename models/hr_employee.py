@@ -15,7 +15,6 @@ from calendar import monthrange
 from datetime import date, timedelta
 
 from odoo import api, fields, models
-from odoo.tools.safe_eval import safe_eval
 
 from . import loan_policy
 
@@ -335,31 +334,13 @@ class HrEmployee(models.Model):
 
         if rule:
             # A rule owns its group completely -- figure AND timing. The
-            # Settings knobs (Deduct On, the global formula) govern only
-            # rule-less loans, or a client could never be sure which of the
-            # two layers decided a slip.
+            # rules catalogue is the ONLY customisation layer; a rule-less
+            # loan simply runs the built-in figure, so there is never a
+            # question of which of two layers decided a slip.
             pot = rule._evaluate(
                 dict(localdict, result=built_in()), fallback=built_in())
         else:
-            deduct_on = loan_policy.flat_deduct_on(self.env)
-            timing_ok = {
-                'always': True,
-                'fifteenth': covers_15th,
-                'month_end': covers_month_end,
-                'either': covers_15th or covers_month_end,
-            }[deduct_on]
-            pot = built_in(timing_ok)
-            formula = loan_policy.flat_formula(self.env)
-            if formula:
-                localdict['result'] = pot
-                try:
-                    safe_eval(formula, localdict, mode='exec', nocopy=True)
-                    pot = float(localdict.get('result') or 0.0)
-                except Exception:
-                    _logger.warning(
-                        'The Flat Deduction Formula raised; using the '
-                        'built-in figure of %.2f instead.', pot,
-                        exc_info=True)
+            pot = built_in()
         pot = max(min(pot, total_balance), 0.0)
         if pot <= 0.005:
             return []

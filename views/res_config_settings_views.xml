@@ -80,24 +80,10 @@
                                  help="How often an instalment falls due. Weekly/semi-monthly/monthly prorate by the days each payslip covers; Per Payslip (flat) takes the whole instalment out of every cutoff. A loan product may override this.">
                             <field name="loan_repayment_period" class="oe_inline"/>
                         </setting>
-                        <setting string="Cutoff Cadence"
-                                 help="How many payslips a month holds — used for the monthly-equivalent maths on flat loans (capacity check, term figures). The deduction itself is always one instalment per payslip.">
-                            <field name="loan_payslip_cadence" class="oe_inline"/>
-                        </setting>
                         <setting string="Default Repayment Rule"
-                                 help="Offered on every new application; the filer may pick another. Manage the catalogue in Loans → Configuration → Repayment Rules. Empty = built-in figure plus the knobs below.">
+                                 help="Offered on every new application; the filer may pick another. The catalogue in Loans → Configuration → Repayment Rules is where the deduction arithmetic is customised, salary-rule style. Empty = built-in figure (one instalment per payslip).">
                             <field name="loan_default_repayment_rule_id" class="oe_inline"
                                    options="{'no_create': True}"/>
-                        </setting>
-                        <setting string="Deduct On"
-                                 help="When a flat instalment is taken: every payslip, or only slips covering the 15th and/or month-end — for clients whose loans are paid once a month or on one specific cutoff.">
-                            <field name="loan_flat_deduct_on" class="oe_inline"/>
-                        </setting>
-                        <setting string="Flat Deduction Formula"
-                                 help="Optional Python, salary-rule style, overriding what a payslip deducts for flat loans. Assign to `result`; you get `result` (built-in figure), `per`, `balance`, `paid`, `loans`, `employee`, `date_from`, `date_to`, `covers_15th`, `covers_month_end`, plus `date`, `timedelta`, `monthrange`. Example: result = per if covers_month_end else 0. Empty = the standard rule. Errors are logged and ignored.">
-                            <field name="loan_flat_formula" widget="ace"
-                                   options="{'mode': 'python'}"
-                                   placeholder="result = per if covers_month_end else 0"/>
                         </setting>
                         <setting string="Default Repayment per Period"
                                  help="On a fixed basis. Offered on a new application and editable per loan.">

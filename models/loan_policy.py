@@ -247,37 +247,11 @@ def payslip_cadence(env):
     return raw if raw in CADENCES else DEFAULT_PAYSLIP_CADENCE
 
 
-# ── Custom flat-deduction rule ───────────────────────────────────────────────
-# Salary-rule-style Python overriding what a payslip deducts for flat loans.
-# Empty (the default) keeps the built-in figure: one instalment, closing
-# stretch taken in full. Evaluated with safe_eval; locals are `result` (the
-# built-in figure, and what to assign), `per`, `balance`, `loans`,
-# `employee`, `date_from`, `date_to`. A formula that raises is logged and
-# ignored -- payroll must not break on a typo here.
-PARAM_FLAT_FORMULA = 'nihao_hr_loan.flat_formula'
-
-
-def flat_formula(env):
-    return str(_raw(env, PARAM_FLAT_FORMULA, '') or '').strip()
-
-
-# When a flat instalment is taken. `always` deducts on every payslip; the
-# others deduct only on a slip whose period covers that day of the month --
-# the way a client that pays loans once a month (month-end) or on one
-# specific cutoff says it. The formula above can still override the figure
-# either way.
-PARAM_FLAT_DEDUCT_ON = 'nihao_hr_loan.flat_deduct_on'
-DEDUCT_ON = ('always', 'fifteenth', 'month_end', 'either')
-
 # The repayment rule offered on a new application (efs.loan.repayment.rule
-# id). Empty means new loans start with no rule and run the built-in figure
-# plus the Settings knobs above.
+# id). The rules catalogue (Loans > Configuration > Repayment Rules) is the
+# one customisation layer for the flat deduction; empty means new loans
+# start with no rule and run the built-in figure.
 PARAM_DEFAULT_REPAYMENT_RULE = 'nihao_hr_loan.default_repayment_rule_id'
-
-
-def flat_deduct_on(env):
-    raw = str(_raw(env, PARAM_FLAT_DEDUCT_ON, 'always') or '').strip().lower()
-    return raw if raw in DEDUCT_ON else 'always'
 
 
 def repayment_amount(env):
