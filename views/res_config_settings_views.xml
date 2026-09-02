@@ -54,7 +54,7 @@
                             </div>
                         </setting>
                         <setting string="Ceiling Includes Existing Debt"
-                                 help="Measure the maximum against what the employee already owes plus the new request, rather than against the new request on its own.">
+                                 help="Measure the maximum against the original amount of every unfinished loan plus the new request. Part-payments do not free headroom — a loan occupies its full amount until fully paid.">
                             <field name="loan_ceiling_counts_debt"/>
                         </setting>
                         <setting string="Loan Products"

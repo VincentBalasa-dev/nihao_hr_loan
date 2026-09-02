@@ -47,8 +47,10 @@ DEFAULT_COOLDOWN_DAYS = 0
 
 # ── Amount ───────────────────────────────────────────────────────────────────
 
-# Measure the ceiling against what the employee already owes plus the new
-# request, rather than against the new request alone.
+# Measure the ceiling against the ORIGINAL PRINCIPAL of every unfinished
+# loan plus the new request, rather than against the new request alone.
+# Principal, not balance: part-payments do not free headroom until a loan
+# fully closes.
 PARAM_COUNT_EXISTING_DEBT = 'nihao_hr_loan.ceiling_counts_existing_debt'
 DEFAULT_COUNT_EXISTING_DEBT = False
 

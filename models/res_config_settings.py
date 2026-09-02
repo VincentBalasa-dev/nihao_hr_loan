@@ -66,9 +66,11 @@ class ResConfigSettings(models.TransientModel):
     loan_ceiling_counts_debt = fields.Boolean(
         string='Ceiling Includes Existing Debt',
         config_parameter=loan_policy.PARAM_COUNT_EXISTING_DEBT,
-        help='Measure the maximum loanable amount against what the employee '
-             'already owes plus the new request, rather than against the new '
-             'request on its own.')
+        help='Measure the maximum loanable amount against the original '
+             'amount of every unfinished loan plus the new request, rather '
+             'than against the new request on its own. Part-payments do not '
+             'free headroom: a loan occupies its full amount until fully '
+             'paid.')
 
     # ── Repayment ───────────────────────────────────────────────────────────
     # Deliberately absent. The repayment configuration -- instalment,

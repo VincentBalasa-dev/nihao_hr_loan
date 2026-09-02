@@ -726,9 +726,12 @@ class Loan(models.Model):
         """The loanable ceiling for this length of service.
 
         By default it measures the new application on its own. Switch on
-        "Ceiling Includes Existing Debt" and it measures the request plus what
-        is already owed, which is the stricter and more honest reading of a
-        limit expressed as a multiple of salary.
+        "Ceiling Includes Existing Debt" and it measures the request plus the
+        ORIGINAL PRINCIPAL of every unfinished loan -- not the remaining
+        balance. An employee who borrowed their whole ceiling has no
+        headroom until a loan actually closes; part-payments do not free
+        room gradually. That is the handbook's reading: "they loaned
+        11,000" stays true until the loans are over.
         """
         self.ensure_one()
         employee = self._policy_employee()
@@ -749,8 +752,10 @@ class Loan(models.Model):
         requested = self.amount or 0.0
         existing = 0.0
         if loan_policy.ceiling_counts_existing_debt(self.env):
+            # Principal, not balance: an unfinished loan occupies its full
+            # original amount against the ceiling until it is fully paid.
             existing = sum(self._other_loans(
-                ('active', 'cancel_requested')).mapped('balance'))
+                ('active', 'cancel_requested')).mapped('amount'))
 
         if requested + existing <= ceiling + 0.005:
             return None
@@ -760,8 +765,9 @@ class Loan(models.Model):
         if existing:
             return (
                 'The maximum loanable amount for %s is %.2f (%.0f%% of monthly '
-                'basic salary at %.1f year(s) of service). They already owe '
-                '%.2f, leaving %.2f. Requested: %.2f.'
+                'basic salary at %.1f year(s) of service). They already '
+                'loaned %.2f on loans not yet finished, leaving %.2f. '
+                'Requested: %.2f.'
                 % (employee.name, ceiling, share,
                    employee.loan_service_years or 0.0, existing,
                    max(ceiling - existing, 0.0), requested))
