@@ -140,6 +140,14 @@ class HrPayslip(models.Model):
         Payment = self.env['efs.loan.payment'].sudo()
 
         for slip in self:
+            if slip.credit_note:
+                # A refund reverses pay; its recomputed DED_LOAN line is
+                # not money taken from anyone, and posting it would credit
+                # the loan a second time (the idempotency stamp keys on
+                # the slip number, and a refund carries its own). The way
+                # to take a wrongly confirmed slip's repayments back off
+                # the loans is to cancel or re-draft THAT slip.
+                continue
             deducted = slip._loan_deducted_amount()
             if deducted <= EPSILON:
                 continue
