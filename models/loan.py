@@ -965,6 +965,21 @@ class Loan(models.Model):
         carry ``STATE_WRITE_CTX`` and pass through untouched, which is what
         stops this from recursing.
         """
+        if 'repayment_amount' in vals and not self.env.su \
+                and not self.env.user.has_group(ENDORSER_GROUP) \
+                and not self.env.user.has_group(APPROVER_GROUP):
+            running = self.filtered(
+                lambda loan: loan.state in ('active', 'cancel_requested'))
+            if running:
+                # Handbook s.5.3: faster repayment ON REQUEST -- the request
+                # goes to HR, who makes the change. A borrower must not be
+                # able to re-price their own running loan, in either
+                # direction. Applications still in pending/endorsed stay
+                # editable by their filer as before.
+                raise AccessError(
+                    'Changing the repayment of a running loan is an HR '
+                    'action. Ask HR to raise the instalment (%s).'
+                    % ', '.join(running.mapped('name')))
         if 'state' not in vals or self.env.context.get(STATE_WRITE_CTX):
             result = super().write(vals)
             if PAYSLIP_INPUT_FIELDS & vals.keys():

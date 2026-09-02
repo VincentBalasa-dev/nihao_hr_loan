@@ -227,10 +227,15 @@
                             <!--
                                 Editable on a fixed basis (the handbook lets an
                                 employee ask for more); computed from the
-                                principal on a percent basis.
+                                principal on a percent basis. Also editable on
+                                a RUNNING loan - handbook s.5.3, faster
+                                repayment on request - where a Python guard
+                                restricts the write to HR; the rule's minimum
+                                still floors it and the change is tracked in
+                                the chatter.
                             -->
                             <field name="repayment_amount"
-                                   readonly="repayment_basis == 'percent' or state not in ('pending', 'endorsed')"/>
+                                   readonly="repayment_basis == 'percent' or state not in ('pending', 'endorsed', 'active', 'cancel_requested')"/>
                             <field name="repayment_rule_id"
                                    invisible="repayment_period != 'payslip'"
                                    readonly="state not in ('pending', 'endorsed')"
