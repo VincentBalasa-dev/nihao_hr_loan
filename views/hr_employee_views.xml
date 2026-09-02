@@ -44,12 +44,12 @@
                                    widget="float" digits="[6, 2]"/>
                             <field name="loan_eligible"/>
                             <field name="loan_max_amount"/>
+                            <field name="loan_available_amount"/>
                         </group>
                         <group string="Standing">
                             <field name="loan_active_count"/>
                             <field name="loan_unauthorized_count"/>
                             <field name="loan_balance"/>
-                            <field name="loan_cutoff_deduction"/>
                             <field name="loan_currency_id" invisible="1"/>
                         </group>
                     </group>
@@ -60,7 +60,6 @@
                             <field name="amount" string="Principal"/>
                             <field name="total_paid" string="Paid"/>
                             <field name="balance" string="Remaining"/>
-                            <field name="monthly_amortization" string="Per Cutoff"/>
                             <field name="deduction_authorized" string="Authorized"/>
                             <field name="paid_percentage" widget="progressbar"/>
                             <field name="state"/>

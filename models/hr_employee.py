@@ -57,6 +57,13 @@ class HrEmployee(models.Model):
              'length of service. Management may still reduce or deny.')
     loan_service_years = fields.Float(
         compute='_compute_loan_standing', string='Years of Service')
+    loan_available_amount = fields.Monetary(
+        compute='_compute_loan_standing', string='Available to Request',
+        currency_field='loan_currency_id',
+        help='What a new application could ask for right now: the ceiling, '
+             'minus what is still owed when Ceiling Includes Existing Debt '
+             'is on - and zero while the open room is under the Minimum '
+             'Room to Reborrow. Management may still reduce or deny.')
 
     loan_currency_id = fields.Many2one(
         'res.currency', compute='_compute_loan_standing')
@@ -159,6 +166,23 @@ class HrEmployee(models.Model):
 
             multiple = loan_policy.ceiling_multiple(self.env, years)
             rec.loan_max_amount = round(rec._loan_monthly_wage() * multiple, 2)
+
+            # What a new application could ask for TODAY, mirroring
+            # _check_amount_ceiling exactly. The room is untapped ceiling
+            # plus repayments (= ceiling minus outstanding balances); it
+            # shows as 0 until it reaches the Minimum Room to Reborrow --
+            # the progress toward the unlock is deliberately kept in the
+            # background, not on the form. Ineligible = 0.
+            available = rec.loan_max_amount
+            if not rec.loan_eligible:
+                available = 0.0
+            elif loan_policy.ceiling_counts_existing_debt(self.env):
+                available = rec.loan_max_amount - rec.loan_balance
+                threshold = loan_policy.reborrow_min_headroom(self.env)
+                if active and threshold > 0 \
+                        and available < threshold - 0.005:
+                    available = 0.0
+            rec.loan_available_amount = round(max(available, 0.0), 2)
 
     # ── What payroll deducts ────────────────────────────────────────────────
 
