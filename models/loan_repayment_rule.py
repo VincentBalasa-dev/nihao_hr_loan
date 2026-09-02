@@ -9,9 +9,9 @@ different clients, products and situations run different arithmetic side
 by side.
 
 Flat loans sharing the same rule also share its pot: the rule's figure is
-computed once for the group and split equally across them, the same
-one-instalment-per-employee behaviour the built-in rule has. Loans with
-no rule keep the built-in behaviour.
+computed once for the group and paid to the oldest loan first until it
+closes, the same one-instalment-per-employee behaviour the built-in rule
+has. Loans with no rule keep the built-in behaviour.
 
 The rule also carries the deal's figures -- instalment, percent, start
 delay, repayment cap. They used to be company-wide Settings; on the rule,
@@ -21,7 +21,7 @@ side, and the Python code reads them as plain variables.
 
 import logging
 
-from odoo import fields, models
+from odoo import api, fields, models
 
 _logger = logging.getLogger(__name__)
 
@@ -46,15 +46,72 @@ class LoanRepaymentRule(models.Model):
              'offered by default on a new application.')
     active = fields.Boolean(default=True)
 
+    # ── How the money is collected ──────────────────────────────────────────
+    # `payroll` is the company-client mode: DED_LOAN takes the instalment
+    # when a payslip is computed, nothing happens between payrolls.
+    # `scheduled` is the lending-business mode: a daily cron materialises
+    # each due instalment as an UNPAID repayment on the calendar below, a
+    # cashier marks it paid when the money arrives, and payroll ignores
+    # the loan entirely -- the module runs with no payroll use at all.
+    collection = fields.Selection([
+        ('payroll', 'Payroll deduction'),
+        ('scheduled', 'Scheduled - no payroll'),
+    ], string='Collected By', required=True,
+        default=lambda self: (
+            'payroll' if self._payroll_collection_ready() else 'scheduled'),
+        help='Payroll deduction: instalments come out of computed '
+             'payslips (the company-client mode). Scheduled: a daily job '
+             'creates each due instalment as an Unpaid repayment on its '
+             'due date - the reminder a cashier marks Paid when the money '
+             'arrives - and payroll never touches the loan (the '
+             'lending-business mode).')
+    cadence = fields.Selection([
+        ('week', 'Weekly'),
+        ('semimonth', 'Semi-monthly (15th and month-end)'),
+        ('month', 'Monthly'),
+    ], string='Instalment Cadence', default='semimonth',
+        help='How often a scheduled instalment falls due, counted from '
+             'the loan start date. Only used when Collected By is '
+             'Scheduled.')
+    payroll_ready = fields.Boolean(
+        compute='_compute_payroll_ready',
+        help='Whether payroll can actually collect: the DED_LOAN salary '
+             'rule exists and sits on at least one salary structure.')
+
+    @api.model
+    def _payroll_collection_ready(self):
+        """Can payroll actually collect a loan on this database?
+
+        True only when the DED_LOAN salary rule exists AND is attached to
+        at least one salary structure -- otherwise payslips silently
+        deduct nothing, which is worse than saying so. The registry guard
+        keeps this working if the payroll bridge is ever split out.
+        """
+        if 'hr.salary.rule' not in self.env:
+            return False
+        rule = self.env['hr.salary.rule'].sudo().search(
+            [('code', '=', 'DED_LOAN')], limit=1)
+        if not rule:
+            return False
+        return bool(self.env['hr.payroll.structure'].sudo().search_count(
+            [('rule_ids', 'in', rule.ids)]))
+
+    def _compute_payroll_ready(self):
+        ready = self._payroll_collection_ready()
+        for rec in self:
+            rec.payroll_ready = ready
+
     # ── The deal's figures ──────────────────────────────────────────────────
     # Value knobs that used to live in Settings, one set for the whole
     # company. On the rule, each deal carries its own; the Python code below
     # reads them as plain variables of the same name.
     amount = fields.Float(
-        string='Repayment per Period', default=1000.0,
-        help='The instalment this deal asks per payslip. Offered onto an '
-             'application that picks this rule (still editable per loan) '
-             'and available to the code as `amount`.')
+        string='Minimum Repayment per Period', default=1000.0,
+        help='The default AND the floor. Offered onto an application that '
+             'picks this rule; the filer may raise it (faster repayment, '
+             'handbook s.5.3) but a loan on this rule can never repay '
+             'less per period. 0 means no floor. Available to the code '
+             'as `amount`.')
     percent = fields.Float(
         string='Percent of Principal per Period', digits=(5, 2), default=10.0,
         help='On a percent-basis loan: the share of the principal repaid '
@@ -82,9 +139,9 @@ class LoanRepaymentRule(models.Model):
              '`percent`, `start_delay_days` and `max_repayment_percent`, '
              '`date_from`, `date_to`, `covers_15th`, `covers_month_end`, '
              'and the `date`, `timedelta`, `monthrange` tools. The figure '
-             'is split equally across the loans on this rule, and the '
-             'pay-availability cap and whole-instalment floor still apply '
-             'after it.')
+             'pays the oldest loan on this rule first until it closes, and '
+             'the pay-availability cap and whole-instalment floor still '
+             'apply after it.')
     note = fields.Text(
         string='Description',
         help='What this rule does, in the words a colleague needs.')

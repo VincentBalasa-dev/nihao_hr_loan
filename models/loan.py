@@ -22,9 +22,11 @@ accept it but flag it for HR (`advise`), or not evaluate the rules at all
 (`off`). The rules themselves live in one place either way.
 """
 
+import logging
 import math
 import operator as operators
-from datetime import timedelta
+from calendar import monthrange
+from datetime import date as date_type, timedelta
 
 from odoo import api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
@@ -32,6 +34,8 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 from . import loan_policy
 from .loan_approval_mixin import (APPROVER_GROUP, ENDORSER_GROUP,
                                   STATE_WRITE_CTX)
+
+_logger = logging.getLogger(__name__)
 
 BASIS_SELECTION = [
     ('fixed', 'Fixed amount per period'),
@@ -347,7 +351,8 @@ class Loan(models.Model):
         Deliberately overwrites what is on the screen -- switching from the
         Standard rule to a VIP rule is supposed to re-price the draft. A
         figure typed *after* the rule is chosen stays, because nothing
-        fires again.
+        fires again -- but never below the rule's floor, which
+        `_check_repayment_minimum` holds.
         """
         for rec in self:
             rule = rec.repayment_rule_id
@@ -357,6 +362,49 @@ class Loan(models.Model):
                 rec.repayment_percent = rule.percent
             if rule.amount and rec.repayment_basis == 'fixed':
                 rec.repayment_amount = rule.amount
+
+    @api.onchange('repayment_amount')
+    def _onchange_repayment_amount_floor(self):
+        """Say it while they type, not only at save.
+
+        The save-time constraint below is the enforcement; this is the
+        courtesy popup so nobody fills a whole application around a
+        figure the save will refuse.
+        """
+        rule = self.repayment_rule_id
+        if rule and rule.amount > 0 and self.repayment_basis == 'fixed' \
+                and 0 < (self.repayment_amount or 0.0) < rule.amount - 0.005:
+            return {'warning': {
+                'title': 'Below the rule\'s minimum',
+                'message': (
+                    'The "%s" repayment rule sets a minimum repayment of '
+                    '%.2f per period. %.2f will be refused when this '
+                    'application is saved - raise the repayment, or pick '
+                    'a rule with a lower minimum.'
+                    % (rule.name, rule.amount, self.repayment_amount)),
+            }}
+
+    @api.constrains('repayment_amount', 'repayment_rule_id',
+                    'repayment_basis')
+    def _check_repayment_minimum(self):
+        """The rule's figure is a floor, not only a default.
+
+        Handbook s.5.3 allows faster repayment on request -- never slower:
+        an employee may raise the instalment above the rule's minimum, but
+        a loan on the rule cannot creep below the deal it was filed under.
+        Percent-basis loans are exempt (their instalment is computed from
+        the principal, and the percent has its own default).
+        """
+        for rec in self:
+            rule = rec.repayment_rule_id
+            if not rule or rule.amount <= 0 or rec.repayment_basis != 'fixed':
+                continue
+            if (rec.repayment_amount or 0.0) < rule.amount - 0.005:
+                raise ValidationError(
+                    'The repayment per period cannot be below %.2f - the '
+                    'minimum of the "%s" repayment rule. Raise the '
+                    'repayment, or pick a rule with a lower minimum.'
+                    % (rule.amount, rule.name))
 
     # ── Computes ────────────────────────────────────────────────────────────
 
@@ -726,12 +774,18 @@ class Loan(models.Model):
         """The loanable ceiling for this length of service.
 
         By default it measures the new application on its own. Switch on
-        "Ceiling Includes Existing Debt" and it measures the request plus the
-        ORIGINAL PRINCIPAL of every unfinished loan -- not the remaining
-        balance. An employee who borrowed their whole ceiling has no
-        headroom until a loan actually closes; part-payments do not free
-        room gradually. That is the handbook's reading: "they loaned
-        11,000" stays true until the loans are over.
+        "Ceiling Includes Existing Debt" and it measures the request plus
+        what is still owed on every unfinished loan: repayments re-open
+        room under the ceiling.
+
+        The "Minimum Room to Reborrow" threshold then stops the nibble:
+        an employee who still has unfinished loans may only file again
+        once their open room (ceiling minus outstanding balances) has
+        reached that figure. The threshold gates the ROOM, never the
+        request -- once the room is there, a 500-peso application is as
+        welcome as a 5,000 one. It is deliberately not applied to someone
+        with no loans, so a small band ceiling cannot lock anyone out of
+        their first loan.
         """
         self.ensure_one()
         employee = self._policy_employee()
@@ -752,10 +806,21 @@ class Loan(models.Model):
         requested = self.amount or 0.0
         existing = 0.0
         if loan_policy.ceiling_counts_existing_debt(self.env):
-            # Principal, not balance: an unfinished loan occupies its full
-            # original amount against the ceiling until it is fully paid.
-            existing = sum(self._other_loans(
-                ('active', 'cancel_requested')).mapped('amount'))
+            others = self._other_loans(('active', 'cancel_requested'))
+            # Balance, not principal: repayments re-open room. The
+            # threshold below decides when the re-opened room is enough
+            # to borrow against.
+            existing = sum(others.mapped('balance'))
+            threshold = loan_policy.reborrow_min_headroom(self.env)
+            available = ceiling - existing
+            if others and threshold > 0 and available < threshold - 0.005:
+                return (
+                    '%s still owes %.2f on %d unfinished loan(s), leaving '
+                    '%.2f of loanable room. A new loan needs at least %.2f '
+                    'of room - repayments free it up, or wait for a loan '
+                    'to finish.'
+                    % (employee.name, existing, len(others),
+                       max(available, 0.0), threshold))
 
         if requested + existing <= ceiling + 0.005:
             return None
@@ -765,9 +830,8 @@ class Loan(models.Model):
         if existing:
             return (
                 'The maximum loanable amount for %s is %.2f (%.0f%% of monthly '
-                'basic salary at %.1f year(s) of service). They already '
-                'loaned %.2f on loans not yet finished, leaving %.2f. '
-                'Requested: %.2f.'
+                'basic salary at %.1f year(s) of service). They still owe '
+                '%.2f, leaving %.2f. Requested: %.2f.'
                 % (employee.name, ceiling, share,
                    employee.loan_service_years or 0.0, existing,
                    max(ceiling - existing, 0.0), requested))
@@ -1366,6 +1430,130 @@ class Loan(models.Model):
         }
 
 
+class LoanScheduledCollection(models.Model):
+    """Scheduled (no-payroll) collection, in its own inherit for legibility.
+
+    The lending-business mode: loans whose repayment rule says
+    ``collection = 'scheduled'`` are never touched by payroll. Instead a
+    daily cron materialises each instalment that has fallen due as an
+    UNPAID repayment dated its due date -- the reminder row in
+    Loans > Repayments -- and a cashier marks it Paid when the money
+    actually arrives. Only Paid rows reduce the balance, so a generated
+    reminder is a to-collect note, never money.
+    """
+    _inherit = 'efs.loan'
+
+    SCHED_REF = 'SCHED/%s/%s'   # loan reference, due date
+
+    def _scheduled_due_dates(self, until):
+        """Due dates from the start date through ``until``, per the
+        rule's cadence. Bounded, so a mis-set start date cannot spin."""
+        self.ensure_one()
+        start = self.start_date
+        if not start:
+            return []
+        cadence = self.repayment_rule_id.cadence or 'semimonth'
+        dates = []
+
+        def add_months(d, n):
+            year = d.year + (d.month - 1 + n) // 12
+            month = (d.month - 1 + n) % 12 + 1
+            return date_type(year, month,
+                             min(d.day, monthrange(year, month)[1]))
+
+        if cadence == 'week':
+            d = start
+            while d <= until and len(dates) < 600:
+                dates.append(d)
+                d += timedelta(days=7)
+        elif cadence == 'month':
+            i = 0
+            d = start
+            while d <= until and len(dates) < 600:
+                dates.append(d)
+                i += 1
+                d = add_months(start, i)
+        else:   # semimonth: the 15th and the month-end, from the start on
+            cursor = date_type(start.year, start.month, 1)
+            while cursor <= until and len(dates) < 600:
+                last = monthrange(cursor.year, cursor.month)[1]
+                for day in (15, last):
+                    d = date_type(cursor.year, cursor.month, day)
+                    if start <= d <= until:
+                        dates.append(d)
+                cursor = add_months(cursor, 1)
+        return dates
+
+    @api.model
+    def _cron_generate_scheduled_repayments(self):
+        """Daily. Create the Unpaid reminder for every instalment that has
+        fallen due, and prune reminders whose loan stopped collecting.
+
+        Idempotent by reference (SCHED/<loan>/<date>): a due date is
+        materialised once, whether the row is still Unpaid or was already
+        marked Paid. Reminders stop when what is already on the calendar
+        (Unpaid rows) covers the balance, and the final instalment
+        snap-closes exactly like the payroll figure does.
+        """
+        today = fields.Date.context_today(self)
+        Payment = self.env['efs.loan.payment'].sudo()
+
+        # Reminders of loans that no longer collect are noise: the loan
+        # was cancelled, deleted (cascade covers that), or paid off by
+        # cash. Only generated rows are pruned - a row a human typed is
+        # not ours to delete.
+        stale = Payment.search([
+            ('state', '=', 'draft'),
+            ('reference', '=like', 'SCHED/%'),
+        ]).filtered(lambda p: p.loan_id.state not in
+                    ('active', 'cancel_requested')
+                    or (p.loan_id.balance or 0.0) <= 0.005)
+        if stale:
+            stale.unlink()
+
+        loans = self.search([
+            ('state', 'in', ('active', 'cancel_requested')),
+            ('repayment_rule_id.collection', '=', 'scheduled'),
+            ('start_date', '!=', False),
+        ])
+        created = 0
+        for loan in loans:
+            per = loan.repayment_amount or 0.0
+            balance = loan.balance or 0.0
+            if per <= 0.005 or balance <= 0.005:
+                continue
+            mine = Payment.search([('loan_id', '=', loan.id),
+                                   ('reference', '=like', 'SCHED/%')])
+            seen = set(mine.mapped('reference'))
+            # Unpaid rows already on the calendar still expect money, so
+            # only the uncovered remainder generates new reminders.
+            remaining = round(balance - sum(
+                p.amount for p in mine if p.state == 'draft'), 2)
+            for due in loan._scheduled_due_dates(today):
+                if remaining <= 0.005:
+                    break
+                ref = self.SCHED_REF % (loan.name, due)
+                if ref in seen:
+                    continue
+                amount = min(per, remaining)
+                if 0.005 < remaining - amount < per - 0.005:
+                    amount = remaining   # snap-close the tail
+                Payment.create({
+                    'loan_id': loan.id,
+                    'date': due,
+                    'amount': round(amount, 2),
+                    'payment_method': 'scheduled',
+                    'reference': ref,
+                    'state': 'draft',
+                })
+                remaining = round(remaining - amount, 2)
+                created += 1
+        if created or stale:
+            _logger.info(
+                'Scheduled loan collection: %d reminder(s) created, %d '
+                'stale pruned.', created, len(stale))
+
+
 class LoanPayment(models.Model):
     _name = 'efs.loan.payment'
     _description = 'Loan Repayment'
@@ -1402,13 +1590,15 @@ class LoanPayment(models.Model):
     # bridge fills it without this module ever learning it exists.
     payment_method = fields.Selection([
         ('payroll', 'Payroll Deduction'),
+        ('scheduled', 'Scheduled'),
         ('cash', 'Cash'),
         ('bonus', 'Bonus / Incentive'),
         ('other', 'Other'),
     ], string='Method', default='cash', required=True, index=True,
         help='Payroll Deduction is set automatically when a payslip is '
-             'confirmed. Choose Cash, Bonus or Other when recording a '
-             'repayment by hand.')
+             'confirmed; Scheduled is stamped by the daily job that '
+             'materialises due instalments for no-payroll loans. Choose '
+             'Cash, Bonus or Other when recording a repayment by hand.')
     reference = fields.Char(
         string='Reference', index=True,
         help='Free text. Payroll fills in the payslip number; for a manual '
@@ -1425,10 +1615,17 @@ class LoanPayment(models.Model):
         help='Filled by payroll when the payslip is confirmed. Click to open '
              'the payslip this repayment was deducted on.')
     state = fields.Selection([
-        ('draft', 'Draft'),
-        ('posted', 'Posted'),
+        ('draft', 'Unpaid'),
+        ('posted', 'Paid'),
     ], string='Status', default='posted', required=True, index=True,
-        help='Only posted repayments reduce the outstanding balance.')
+        help='Only Paid repayments reduce the outstanding balance. An '
+             'Unpaid row is a due instalment waiting to be collected - '
+             'the scheduled reminders are born Unpaid.')
+
+    def action_mark_paid(self):
+        """The cashier's button: the money arrived, count it."""
+        self.filtered(lambda p: p.state == 'draft').write(
+            {'state': 'posted'})
 
     @api.depends('loan_id.name', 'date', 'amount', 'currency_id')
     def _compute_display_name(self):

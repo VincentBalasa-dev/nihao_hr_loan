@@ -15,6 +15,7 @@ and nobody would connect the two.
 """
 
 from odoo import api, fields, models
+from odoo.exceptions import UserError
 
 from . import loan_policy
 
@@ -66,11 +67,22 @@ class ResConfigSettings(models.TransientModel):
     loan_ceiling_counts_debt = fields.Boolean(
         string='Ceiling Includes Existing Debt',
         config_parameter=loan_policy.PARAM_COUNT_EXISTING_DEBT,
-        help='Measure the maximum loanable amount against the original '
-             'amount of every unfinished loan plus the new request, rather '
-             'than against the new request on its own. Part-payments do not '
-             'free headroom: a loan occupies its full amount until fully '
-             'paid.')
+        help='Measure the maximum loanable amount against what is still '
+             'owed on unfinished loans plus the new request, rather than '
+             'against the new request on its own. Repayments re-open room '
+             'under the ceiling; pair with Minimum Room to Reborrow to '
+             'decide when that room is enough to borrow against.')
+
+    loan_reborrow_min_headroom = fields.Float(
+        string='Minimum Room to Reborrow',
+        config_parameter=loan_policy.PARAM_REBORROW_MIN_HEADROOM,
+        default=loan_policy.DEFAULT_REBORROW_MIN_HEADROOM,
+        help='An employee who still has unfinished loans may only file a '
+             'new application once their open room under the ceiling '
+             '(ceiling minus outstanding balances) reaches this figure. '
+             'It limits when they may come back, never how much they must '
+             'ask for. 0 disables it. Never applied to a first loan. '
+             'Needs Ceiling Includes Existing Debt.')
 
     # ── Repayment ───────────────────────────────────────────────────────────
     # Deliberately absent. The repayment configuration -- instalment,
@@ -114,6 +126,66 @@ class ResConfigSettings(models.TransientModel):
         string='Eligibility Bands', compute='_compute_loan_summary')
     loan_product_count = fields.Integer(
         string='Loan Products', compute='_compute_loan_summary')
+
+    # ── Payroll integration ─────────────────────────────────────────────────
+    loan_payroll_ready = fields.Boolean(
+        compute='_compute_loan_payroll_status')
+    loan_payroll_status = fields.Char(
+        compute='_compute_loan_payroll_status')
+
+    @api.depends('company_id')
+    @api.depends_context('company')
+    def _compute_loan_payroll_status(self):
+        """Whether payslips can actually deduct loans, in one line.
+
+        Ready means the DED_LOAN salary rule exists and sits on at least
+        one salary structure; anything less and payroll-collection rules
+        silently deduct nothing.
+        """
+        ready = self.env[
+            'efs.loan.repayment.rule']._payroll_collection_ready()
+        status = 'Not set up - payslips will not deduct loans.'
+        if ready:
+            rule = self.env['hr.salary.rule'].sudo().search(
+                [('code', '=', 'DED_LOAN')], limit=1)
+            structures = self.env['hr.payroll.structure'].sudo().search(
+                [('rule_ids', 'in', rule.ids)])
+            status = 'DED_LOAN is on: %s' % ', '.join(
+                structures.mapped('name'))
+        for rec in self:
+            rec.loan_payroll_ready = ready
+            rec.loan_payroll_status = status
+
+    def action_setup_loan_payroll(self):
+        """One press: create/adopt DED_LOAN and attach it to the live
+        salary structures. Idempotent - pressing it again is free."""
+        if 'hr.salary.rule' not in self.env:
+            raise UserError(
+                'The payroll app is not installed, so there is nothing to '
+                'wire the loan deduction into. Scheduled collection works '
+                'without it.')
+        rule = self.env['hr.salary.rule'].sudo()._nihao_setup_loan_rule()
+        structures = self.env['hr.payroll.structure'].sudo().search(
+            [('rule_ids', 'in', rule.ids)])
+        if structures:
+            message = ('Payroll deduction is set up: DED_LOAN is on %s.'
+                       % ', '.join(structures.mapped('name')))
+            kind = 'success'
+        else:
+            message = ('DED_LOAN was created, but no salary structure '
+                       'carries deductions yet - add the rule to the '
+                       'structure your payslips use.')
+            kind = 'warning'
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Payroll Integration',
+                'message': message,
+                'type': kind,
+                'next': {'type': 'ir.actions.act_window_close'},
+            },
+        }
 
     # Depends on a real field, not only on context. The settings form is a
     # brand-new transient record loaded through `onchange`, and onchange only

@@ -474,6 +474,12 @@
         <field name="model">efs.loan.payment</field>
         <field name="arch" type="xml">
             <form string="Loan Repayment">
+                <header>
+                    <button name="action_mark_paid" type="object"
+                            string="Mark as Paid" class="btn-primary"
+                            invisible="state != 'draft'"/>
+                    <field name="state" widget="statusbar"/>
+                </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
                         <button name="action_open_loan" type="object"
@@ -520,7 +526,7 @@
         <field name="model">efs.loan.payment</field>
         <field name="arch" type="xml">
             <list string="Loan Repayments"
-                  decoration-muted="state == 'draft'">
+                  decoration-warning="state == 'draft'">
                 <field name="date"/>
                 <field name="loan_id"/>
                 <field name="borrower_name" string="Borrower"/>
@@ -528,6 +534,9 @@
                 <field name="partner_id" optional="hide"/>
                 <field name="amount" sum="Total"/>
                 <field name="payment_method" optional="show"/>
+                <button name="action_mark_paid" type="object"
+                        string="Mark as Paid" icon="fa-check"
+                        invisible="state != 'draft'"/>
                 <!--
                     The payslip as a real, clickable link. Filled by payroll;
                     empty for a cash or bonus repayment. `reference` stays
@@ -553,15 +562,19 @@
                 <field name="partner_id"/>
                 <field name="reference"/>
                 <field name="payment_method"/>
-                <filter name="filter_posted" string="Posted"
+                <filter name="filter_posted" string="Paid"
                         domain="[('state', '=', 'posted')]"/>
-                <filter name="filter_draft" string="Draft"
+                <filter name="filter_draft" string="Unpaid"
                         domain="[('state', '=', 'draft')]"/>
+                <filter name="filter_overdue" string="Overdue"
+                        domain="[('state', '=', 'draft'), ('date', '&lt;', context_today().strftime('%Y-%m-%d'))]"/>
                 <separator/>
                 <filter name="filter_payroll" string="From Payroll"
                         domain="[('payment_method', '=', 'payroll')]"/>
+                <filter name="filter_scheduled" string="Scheduled"
+                        domain="[('payment_method', '=', 'scheduled')]"/>
                 <filter name="filter_manual" string="Entered by Hand"
-                        domain="[('payment_method', '!=', 'payroll')]"/>
+                        domain="[('payment_method', 'not in', ('payroll', 'scheduled'))]"/>
                 <group>
                     <filter name="group_by_method" string="Method"
                             domain="[]" context="{'group_by': 'payment_method'}"/>

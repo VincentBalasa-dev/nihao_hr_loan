@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        The lending-business clock. Company clients rely on payroll to
+        trigger deductions; a client with no payroll relies on this: once a
+        day, every active loan on a Scheduled-collection rule gets its due
+        instalments materialised as Unpaid repayments (the reminders in
+        Loans - Repayments), and reminders of loans that stopped collecting
+        are pruned. Marking a reminder Paid is what actually moves money.
+    -->
+    <data noupdate="1">
+        <record id="ir_cron_generate_scheduled_repayments" model="ir.cron">
+            <field name="name">Loans: generate scheduled repayments</field>
+            <field name="model_id" ref="model_efs_loan"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_generate_scheduled_repayments()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>

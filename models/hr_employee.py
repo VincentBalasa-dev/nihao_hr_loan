@@ -214,6 +214,10 @@ class HrEmployee(models.Model):
         result = []
         flat_loans = []
         for loan in loans:
+            if loan.repayment_rule_id.collection == 'scheduled':
+                # Collected by the scheduler (Unpaid reminders marked Paid
+                # by hand), never by payroll -- the lending-business mode.
+                continue
             if not loan.deduction_authorized:
                 continue
             if loan.start_date and period_to \
@@ -290,11 +294,10 @@ class HrEmployee(models.Model):
         max_repayment_percent) as plain variables; a broken formula logs
         and falls back rather than breaking payroll.
 
-        The pot is then split equally across the flat loans -- 1,000 over
-        two loans credits 500 to each balance -- with a loan that cannot
-        absorb its share spilling the difference to the others, so a
-        closed loan hands its half back and the survivor starts receiving
-        the full instalment.
+        The pot then pays the OLDEST loan first -- 1,000 against two loans
+        goes wholly to the earlier one until it closes, and only then does
+        the next loan start receiving -- so loans finish one at a time, in
+        the order they were taken.
         """
         per = max((loan.repayment_amount or 0.0) for loan in flat_loans)
         total_balance = sum((loan.balance or 0.0) for loan in flat_loans)
@@ -352,49 +355,29 @@ class HrEmployee(models.Model):
         pot = max(min(pot, total_balance), 0.0)
         if pot <= 0.005:
             return []
-        return self._loan_split_equally(
+        return self._loan_split_oldest_first(
             [(loan, loan.balance or 0.0) for loan in flat_loans], pot)
 
     @api.model
-    def _loan_split_equally(self, caps, amount):
-        """Split ``amount`` equally across ``caps`` [(loan, cap), ...].
+    def _loan_split_oldest_first(self, caps, amount):
+        """Allocate ``amount`` across ``caps`` [(loan, cap), ...] in order.
 
-        Each loan gets an even share, capped; whatever a capped loan cannot
-        take is re-split among the rest. Rounding drift (a third of 1,000 is
-        333.33 three times, a centavo short) lands on the first loan so the
-        shares always sum back to the amount actually taken. Returns
-        [(loan, share)] in the order given, zero shares dropped.
+        Oldest loan first: both callers pass the loans ordered
+        ``start_date asc, id asc``, and the whole pot pays down the first
+        loan until it closes before the next one sees a peso -- loans
+        finish one at a time instead of all shrinking together. Returns
+        [(loan, share)] in the order given, zero shares dropped. No
+        rounding drift is possible: each share is an exact min().
         """
-        shares = {}
-        open_items = [(loan, cap) for loan, cap in caps if cap > 0.005]
-        remaining = amount
-        while remaining > 0.005 and open_items:
-            even = remaining / len(open_items)
-            progressed = False
-            still_open = []
-            for loan, cap in open_items:
-                got = shares.get(loan.id, 0.0)
-                take = min(even, cap - got)
-                if take > 0.005:
-                    shares[loan.id] = got + take
-                    remaining -= take
-                    progressed = True
-                if cap - shares.get(loan.id, 0.0) > 0.005:
-                    still_open.append((loan, cap))
-            open_items = still_open
-            if not progressed:
-                break
         out = []
+        remaining = round(amount, 2)
         for loan, cap in caps:
-            share = round(shares.get(loan.id, 0.0), 2)
-            if share > 0.005:
-                out.append((loan, share))
-        allocated = round(amount - remaining, 2)
-        drift = round(allocated - sum(share for _loan, share in out), 2)
-        if out and abs(drift) >= 0.01:
-            loan0, share0 = out[0]
-            cap0 = dict((loan.id, cap) for loan, cap in caps)[loan0.id]
-            out[0] = (loan0, round(min(share0 + drift, cap0), 2))
+            if remaining <= 0.005:
+                break
+            take = round(min(cap, remaining), 2)
+            if take > 0.005:
+                out.append((loan, take))
+                remaining = round(remaining - take, 2)
         return out
 
     def _loan_deduction_total(self, date_from=None, date_to=None,

@@ -54,8 +54,13 @@
                             </div>
                         </setting>
                         <setting string="Ceiling Includes Existing Debt"
-                                 help="Measure the maximum against the original amount of every unfinished loan plus the new request. Part-payments do not free headroom — a loan occupies its full amount until fully paid.">
+                                 help="Measure the maximum against what is still owed on unfinished loans plus the new request. Repayments re-open room under the ceiling.">
                             <field name="loan_ceiling_counts_debt"/>
+                        </setting>
+                        <setting string="Minimum Room to Reborrow"
+                                 help="With unfinished loans, a new application is only accepted once the open room under the ceiling reaches this figure. Gates when they may come back, never the size of the request. 0 = off; never applied to a first loan."
+                                 invisible="not loan_ceiling_counts_debt">
+                            <field name="loan_reborrow_min_headroom" class="oe_inline"/>
                         </setting>
                         <setting string="Loan Products"
                                  help="What a loan is lent under, and how any interest is worked out.">
@@ -77,6 +82,27 @@
                         instalment, percent, start delay, repayment cap and
                         deduction arithmetic, and an application picks one.
                     -->
+                    <block title="Payroll Integration"
+                           help="How payroll-collection rules take money out of payslips. Scheduled-collection rules never need any of this.">
+                        <setting string="Payroll Deduction"
+                                 help="One press creates (or adopts) the DED_LOAN salary rule and attaches it to every salary structure that already carries deductions. Idempotent — pressing again only re-syncs the formula.">
+                            <div class="mt-2">
+                                <button name="action_setup_loan_payroll" type="object"
+                                        string="Set Up Payroll Deduction" icon="fa-cogs"
+                                        class="btn-link"/>
+                                <div>
+                                    <field name="loan_payroll_ready" invisible="1"/>
+                                    <span class="text-success" invisible="not loan_payroll_ready">
+                                        <field name="loan_payroll_status" class="oe_inline" readonly="1"/>
+                                    </span>
+                                    <span class="text-danger" invisible="loan_payroll_ready">
+                                        <field name="loan_payroll_status" class="oe_inline" readonly="1"/>
+                                    </span>
+                                </div>
+                            </div>
+                        </setting>
+                    </block>
+
                     <block title="Coverage"
                            help="Who the loan policy applies to at all. Both off by default; a client turns on what their handbook says.">
                         <setting string="Eligible Employee Types"

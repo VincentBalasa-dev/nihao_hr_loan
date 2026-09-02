@@ -47,12 +47,28 @@ DEFAULT_COOLDOWN_DAYS = 0
 
 # ── Amount ───────────────────────────────────────────────────────────────────
 
-# Measure the ceiling against the ORIGINAL PRINCIPAL of every unfinished
-# loan plus the new request, rather than against the new request alone.
-# Principal, not balance: part-payments do not free headroom until a loan
-# fully closes.
+# Measure the ceiling against what the employee still owes on unfinished
+# loans plus the new request, rather than against the new request alone.
+# Balance, not principal: repayments re-open room under the ceiling -- but
+# see the re-borrow threshold below, which stops someone nibbling back in
+# the moment a few hundred pesos of room appears.
 PARAM_COUNT_EXISTING_DEBT = 'nihao_hr_loan.ceiling_counts_existing_debt'
 DEFAULT_COUNT_EXISTING_DEBT = False
+
+# The re-borrow threshold: an employee with unfinished loans may only file
+# a new application once their open room under the ceiling (ceiling minus
+# outstanding balances) has reached this figure. It gates the ROOM, never
+# the request -- a 500-peso application is fine the moment the room is
+# there. 0 = off. Only meaningful with ceiling_counts_existing_debt on,
+# and never applied to someone with no loans (a small band ceiling must
+# not lock anyone out of their first loan).
+PARAM_REBORROW_MIN_HEADROOM = 'nihao_hr_loan.reborrow_min_headroom'
+DEFAULT_REBORROW_MIN_HEADROOM = 0.0
+
+
+def reborrow_min_headroom(env):
+    return _number(env, PARAM_REBORROW_MIN_HEADROOM,
+                   DEFAULT_REBORROW_MIN_HEADROOM)
 
 # ── Repayment ────────────────────────────────────────────────────────────────
 # The repayment figures are NOT settings any more: each repayment rule
