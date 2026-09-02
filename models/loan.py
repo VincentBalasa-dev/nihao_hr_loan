@@ -1075,8 +1075,34 @@ class Loan(models.Model):
             )
         raise UserError('%s is not a status this loan can be moved to.' % target)
 
+    def _reporting_endorser_user(self):
+        """The user who must endorse this application, when the org chart
+        names one: the applicant's DIRECT MANAGER (``parent_id`` on the
+        employee), provided that manager has an active login.
+
+        ``None`` means the org chart names nobody -- no manager set, a
+        manager without a user account, or an external borrower -- and the
+        HR endorser group handles it, exactly as before the reporting-line
+        rule existed. An empty field must never strand an application.
+        """
+        self.ensure_one()
+        if self.borrower_type != 'employee':
+            return None
+        manager = self.employee_id.sudo().parent_id
+        user = manager.user_id if manager else None
+        return user if user and user.active else None
+
     def action_endorse(self):
-        """Level 1: HR endorses, and it moves on to the administrator.
+        """Level 1: the applicant's manager endorses; HR is the fallback.
+
+        When the employee's Manager field names someone with a login, that
+        person -- and only that person -- endorses the application, however
+        many HR groups anyone else holds. The endorsement runs as sudo
+        after the identity check, because a line manager holds no HR ACLs;
+        ``endorsed_by`` still records the real person. With no manager on
+        record, the HR endorser group acts as it always did. The
+        administrator's approve-from-pending override remains the escape
+        hatch for an absent manager.
 
         The chatter notes throughout this model use ``_message_log``, not
         ``message_post``. ``message_post`` resolves an author and raises
@@ -1087,8 +1113,18 @@ class Loan(models.Model):
         a payroll clerk without one. These are audit notes, not
         notifications, so the lighter primitive is also the correct one.
         """
-        self._approval_endorse()
         for rec in self:
+            manager_user = rec._reporting_endorser_user()
+            if manager_user and not self.env.su:
+                if self.env.uid != manager_user.id:
+                    raise AccessError(
+                        'This application is endorsed by the employee\'s '
+                        'manager, %s. Ask them to decide it - or an '
+                        'administrator may approve it directly, which is '
+                        'recorded as an override.' % manager_user.name)
+                rec.sudo()._approval_endorse()
+            else:
+                rec._approval_endorse()
             rec._message_log(body='Endorsed to the administrator by %s.'
                                   % self.env.user.display_name)
 
@@ -1141,12 +1177,22 @@ class Loan(models.Model):
 
         Gated at the HR level, not the administrator one: refusing is
         something either level does, and a level 1 that could only advance a
-        request and never stop one would be a rubber stamp.
+        request and never stop one would be a rubber stamp. A pending
+        application whose employee has a manager on record may equally be
+        rejected by that manager -- deciding means both directions, or
+        endorsement would be a rubber stamp of its own.
         """
-        self._approval_assert_group(ENDORSER_GROUP, 'reject')
         self._approval_assert_state(('pending', 'endorsed'), 'rejected')
         for rec in self:
-            rec._state_write(rec._approval_reject_values(reason))
+            manager_user = rec._reporting_endorser_user()
+            target = rec
+            if (rec.state == 'pending' and manager_user
+                    and self.env.uid == manager_user.id
+                    and not self.env.su):
+                target = rec.sudo()   # identity beats group for the manager
+            else:
+                rec._approval_assert_group(ENDORSER_GROUP, 'reject')
+            target._state_write(target._approval_reject_values(reason))
             rec._message_log(
                 body='Rejected by %s. Reason: %s'
                      % (self.env.user.display_name, reason or 'not given'))

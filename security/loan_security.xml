@@ -28,6 +28,24 @@
             <field name="perm_unlink" eval="True"/>
         </record>
 
+        <!--
+            The reporting line: a direct manager READS their reports'
+            loans - that is how they see what they are asked to endorse.
+            Read only: endorsing runs through the workflow (sudo after an
+            identity check), never through a raw write, and a manager has
+            no business editing a report's terms.
+        -->
+        <record id="rule_efs_loan_team" model="ir.rule">
+            <field name="name">Employee loans: direct reports (read)</field>
+            <field name="model_id" ref="model_efs_loan"/>
+            <field name="domain_force">[('employee_id.parent_id.user_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
         <record id="rule_efs_loan_all" model="ir.rule">
             <field name="name">Employee loans: HR sees all</field>
             <field name="model_id" ref="model_efs_loan"/>
