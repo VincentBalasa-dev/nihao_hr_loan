@@ -263,10 +263,16 @@
                                 editing the start date to change it. The field
                                 still exists — _check_repayment_capacity sums it.
                             -->
-                            <field name="term_periods" readonly="1"
-                                   invisible="state in ('pending', 'endorsed')"/>
-                            <field name="term_months" readonly="1"
-                                   invisible="state in ('pending', 'endorsed')"/>
+                            <!--
+                                term_periods / term_months are hidden too
+                                (2026-09-02): derived projections, and with the
+                                instalment now editable mid-loan they drift the
+                                moment HR raises it - a "7 periods" that becomes
+                                4 reads like a broken promise. The fields still
+                                exist for the list view and reporting.
+                            -->
+                            <field name="term_periods" invisible="1"/>
+                            <field name="term_months" invisible="1"/>
                             <field name="start_date"
                                    readonly="state in ('paid', 'rejected', 'cancelled')"/>
                         </group>
