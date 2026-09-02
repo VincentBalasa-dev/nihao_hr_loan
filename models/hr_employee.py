@@ -258,7 +258,7 @@ class HrEmployee(models.Model):
         Loans on the same rule share its instalment (the built-in
         one-per-employee behaviour); loans on different rules run their own
         arithmetic side by side. Loans with no rule form the legacy group,
-        governed by the built-in figure and the Settings knobs.
+        governed by the built-in figure.
         """
         groups = {}
         for loan in flat_loans:
@@ -284,10 +284,11 @@ class HrEmployee(models.Model):
         Two refinements on the plain figure. The closing stretch snaps: a
         balance under two instalments (1,500, or a final 983) is asked in
         full, so a slip that can afford it closes the loan instead of
-        dragging a sub-instalment tail. And the figure is overridable from
-        Settings ("Flat Deduction Formula") with salary-rule-style Python
-        for deployments whose policy outgrows the built-in rule; a broken
-        formula logs and falls back rather than breaking payroll.
+        dragging a sub-instalment tail. And the group's rule may replace
+        the figure with its own salary-rule-style Python, which also sees
+        the rule's value fields (amount, percent, start_delay_days,
+        max_repayment_percent) as plain variables; a broken formula logs
+        and falls back rather than breaking payroll.
 
         The pot is then split equally across the flat loans -- 1,000 over
         two loans credits 500 to each balance -- with a loan that cannot
@@ -336,9 +337,16 @@ class HrEmployee(models.Model):
             # A rule owns its group completely -- figure AND timing. The
             # rules catalogue is the ONLY customisation layer; a rule-less
             # loan simply runs the built-in figure, so there is never a
-            # question of which of two layers decided a slip.
+            # question of which of two layers decided a slip. The rule's
+            # own value fields ride along as plain variables, so a formula
+            # can say `amount * 2` or gate on `percent` without touching
+            # the record.
             pot = rule._evaluate(
-                dict(localdict, result=built_in()), fallback=built_in())
+                dict(localdict, result=built_in(), rule=rule,
+                     amount=rule.amount, percent=rule.percent,
+                     start_delay_days=rule.start_delay_days,
+                     max_repayment_percent=rule.max_repayment_percent),
+                fallback=built_in())
         else:
             pot = built_in()
         pot = max(min(pot, total_balance), 0.0)

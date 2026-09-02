@@ -8,6 +8,9 @@
             <list>
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
+                <field name="amount" optional="show"/>
+                <field name="start_delay_days" optional="hide"/>
+                <field name="max_repayment_percent" optional="hide"/>
                 <field name="note"/>
             </list>
         </field>
@@ -26,6 +29,16 @@
                         <field name="name"/>
                         <field name="note" placeholder="What this rule does, for the next person."/>
                     </group>
+                    <group string="The Deal's Figures">
+                        <group>
+                            <field name="amount"/>
+                            <field name="percent"/>
+                        </group>
+                        <group>
+                            <field name="start_delay_days"/>
+                            <field name="max_repayment_percent"/>
+                        </group>
+                    </group>
                     <notebook>
                         <page string="Python Code" name="code">
                             <field name="amount_python_compute" widget="ace"
@@ -33,8 +46,12 @@
                             <p class="text-muted">
                                 Assign the figure this payslip deducts to <code>result</code>.
                                 Available: <code>result</code> (pre-filled with the built-in figure),
-                                <code>per</code>, <code>balance</code>, <code>paid</code>,
+                                <code>per</code> (the instalment agreed on the loans),
+                                <code>balance</code>, <code>paid</code>,
                                 <code>loans</code>, <code>employee</code>,
+                                <code>rule</code> (this record) and its figures
+                                <code>amount</code>, <code>percent</code>,
+                                <code>start_delay_days</code>, <code>max_repayment_percent</code>,
                                 <code>date_from</code>, <code>date_to</code>,
                                 <code>covers_15th</code>, <code>covers_month_end</code>,
                                 <code>date</code>, <code>timedelta</code>, <code>monthrange</code>.

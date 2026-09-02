@@ -71,47 +71,12 @@ class ResConfigSettings(models.TransientModel):
              'request on its own.')
 
     # ── Repayment ───────────────────────────────────────────────────────────
-    loan_repayment_basis = fields.Selection([
-        ('fixed', 'Fixed amount per period'),
-        ('percent', 'Percent of principal per period'),
-    ], string='Repayment Basis',
-        config_parameter=loan_policy.PARAM_REPAYMENT_BASIS, default='fixed',
-        help='Fixed: a set figure each period. Percent: a share of the '
-             'principal each period, so 10% repays in about ten periods. A '
-             'loan product may override this.')
-    loan_repayment_period = fields.Selection([
-        ('week', 'Weekly'),
-        ('semimonth', 'Semi-monthly'),
-        ('month', 'Monthly'),
-        ('payslip', 'Per Payslip (flat)'),
-    ], string='Repayment Period',
-        config_parameter=loan_policy.PARAM_REPAYMENT_PERIOD, default='week',
-        help='How often an instalment falls due. Weekly / semi-monthly / '
-             'monthly are prorated by the days each payslip covers, so they '
-             'mean the same thing on any payroll schedule. Per Payslip is '
-             'flat: the whole instalment comes out of every payslip, '
-             'whatever its length. A loan product may override this.')
-    loan_default_repayment_rule_id = fields.Many2one(
-        'efs.loan.repayment.rule', string='Default Repayment Rule',
-        config_parameter=loan_policy.PARAM_DEFAULT_REPAYMENT_RULE,
-        help='Offered on every new application; the filer (or HR) may pick '
-             'another. Rules are managed in Loans > Configuration > '
-             'Repayment Rules, salary-rule style - that catalogue is the '
-             'one place the flat-deduction arithmetic is customised. Empty '
-             'starts new loans with no rule: the built-in figure (one '
-             'instalment per payslip).')
-    loan_repayment_amount = fields.Float(
-        string='Default Repayment per Period',
-        config_parameter=loan_policy.PARAM_REPAYMENT_AMOUNT,
-        default=loan_policy.DEFAULT_WEEKLY_REPAYMENT,
-        help='On a fixed basis: offered on a new application, and editable '
-             'per loan.')
-    loan_repayment_percent = fields.Float(
-        string='Default Percent per Period',
-        config_parameter=loan_policy.PARAM_REPAYMENT_PERCENT,
-        default=loan_policy.DEFAULT_REPAYMENT_PERCENT,
-        help='On a percent basis: the share of the principal repaid each '
-             'period. Editable per loan.')
+    # Deliberately absent. The repayment configuration -- instalment,
+    # percent, start delay, repayment cap, and the deduction arithmetic
+    # itself -- lives on the Repayment Rules catalogue (Loans >
+    # Configuration > Repayment Rules), one record per deal, picked per
+    # application. A single company-wide setting could not express two
+    # clients on different deals.
 
     # ── External borrowers ──────────────────────────────────────────────────
     loan_allow_external = fields.Boolean(
@@ -126,21 +91,6 @@ class ResConfigSettings(models.TransientModel):
         help='The only automatic limit on an external loan, since there is '
              'no salary to measure against. 0 means no limit - use Advise '
              'mode and review by hand.')
-
-    loan_start_delay_days = fields.Integer(
-        string='Repayment Starts After (days)',
-        config_parameter=loan_policy.PARAM_START_DELAY_DAYS,
-        default=loan_policy.DEFAULT_START_DELAY_DAYS,
-        help='Days between approval and the first deduction, so the employee '
-             'has the proceeds before anything is taken back.')
-
-    loan_max_repayment_percent = fields.Float(
-        string='Maximum Repayment (% of salary)',
-        config_parameter=loan_policy.PARAM_MAX_REPAYMENT_PCT,
-        default=loan_policy.DEFAULT_MAX_REPAYMENT_PCT,
-        help='Cap on total loan repayments across every active loan, as a '
-             'percentage of monthly basic salary. 0 means no limit. Guards '
-             'against approving someone into a wage they cannot live on.')
 
     # ── Coverage (handbook s.2) ─────────────────────────────────────────────
     loan_eligible_types = fields.Char(

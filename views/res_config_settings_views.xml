@@ -70,42 +70,13 @@
                         </setting>
                     </block>
 
-                    <block title="Repayment"
-                           help="What comes out of a payslip, and when it starts.">
-                        <setting string="Repayment Basis"
-                                 help="Fixed: a set figure each period. Percent: a share of the principal each period, so 10% repays in about ten periods. A loan product may override this.">
-                            <field name="loan_repayment_basis" class="oe_inline"/>
-                        </setting>
-                        <setting string="Repayment Period"
-                                 help="How often an instalment falls due. Weekly/semi-monthly/monthly prorate by the days each payslip covers; Per Payslip (flat) takes the whole instalment out of every cutoff. A loan product may override this.">
-                            <field name="loan_repayment_period" class="oe_inline"/>
-                        </setting>
-                        <setting string="Default Repayment Rule"
-                                 help="Offered on every new application; the filer may pick another. The catalogue in Loans → Configuration → Repayment Rules is where the deduction arithmetic is customised, salary-rule style. Empty = built-in figure (one instalment per payslip).">
-                            <field name="loan_default_repayment_rule_id" class="oe_inline"
-                                   options="{'no_create': True}"/>
-                        </setting>
-                        <setting string="Default Repayment per Period"
-                                 help="On a fixed basis. Offered on a new application and editable per loan.">
-                            <field name="loan_repayment_amount" class="oe_inline"/>
-                        </setting>
-                        <setting string="Default Percent per Period"
-                                 help="On a percent basis. The share of the principal repaid each period; editable per loan.">
-                            <field name="loan_repayment_percent" class="oe_inline"/>
-                            <span class="text-muted"> % of principal</span>
-                        </setting>
-                        <setting string="Repayment Starts After"
-                                 help="Days between approval and the first deduction, so the employee has the proceeds before anything is taken back.">
-                            <field name="loan_start_delay_days" class="oe_inline"/>
-                            <span class="text-muted"> day(s)</span>
-                        </setting>
-                        <setting string="Maximum Repayment"
-                                 help="Cap on total loan repayments across every active loan, as a percentage of monthly basic salary. 0 means no limit.">
-                            <field name="loan_max_repayment_percent" class="oe_inline"/>
-                            <span class="text-muted"> % of monthly salary</span>
-                        </setting>
-                    </block>
-
+<!--
+                        No Repayment block. The repayment configuration lives
+                        on the Repayment Rules catalogue (Loans → Configuration
+                        → Repayment Rules): each rule carries its own
+                        instalment, percent, start delay, repayment cap and
+                        deduction arithmetic, and an application picks one.
+                    -->
                     <block title="Coverage"
                            help="Who the loan policy applies to at all. Both off by default; a client turns on what their handbook says.">
                         <setting string="Eligible Employee Types"

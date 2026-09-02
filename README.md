@@ -90,16 +90,24 @@ without touching code, all under Loans ▸ Configuration ▸ Settings:
 
 The rules stay exactly where they are; the mode only changes their consequence.
 
-**Repayment Basis × Period** — how an instalment is expressed.
+**Repayment Rules** (Loans ▸ Configuration ▸ Repayment Rules) — the whole
+repayment side, one record per deal, salary-rule style. There is deliberately
+**no Repayment block in Settings**: a single company-wide figure could not
+express two clients (or two tiers of one client) on different deals, so each
+rule carries its own figures — Repayment per Period, Percent of Principal,
+Repayment Starts After, Maximum Repayment (% of salary) — plus the Python
+code deciding what each payslip deducts. An application picks a rule (the
+first active rule by sequence is offered by default) and the rule's figures
+land on the form, still editable per loan and **copied onto the loan at
+filing** — editing a rule later never re-prices a running loan. The rule's
+figures are available to its code as `amount`, `percent`,
+`start_delay_days` and `max_repayment_percent`.
 
-| | |
-|---|---|
-| Basis `Fixed` | a set figure per period (NihaoExpress: ₱1,000) — HR edits the amount |
-| Basis `Percent` | a share of the **principal** per period (10% → about ten periods) — HR edits the percent, the amount is computed |
-| Period | `Weekly` / `Semi-monthly` / `Monthly`; payroll prorates by the days each payslip covers, so a monthly figure on a semi-monthly payroll comes out as roughly half per slip and exactly the whole over a month |
-
-Set globally, overridable per loan product, and **copied onto each loan at
-filing** — changing the setting later never re-prices a running loan.
+Loans still each carry a basis (`Fixed` / `Percent` of principal) and a
+period; both default to Fixed + Per Payslip (flat) and a loan product may
+override them. The prorated periods (`Weekly` / `Semi-monthly` / `Monthly`)
+remain for products that want calendar arithmetic; payroll prorates those by
+the days each payslip covers.
 
 **External Borrowers** — off by default. Turned on, a loan may be made to a
 contact (`res.partner`) instead of an employee. The service, salary-ceiling
@@ -110,8 +118,9 @@ method on an external loan. The only automatic limit is *Maximum for External
 Borrowers* (0 = none; use Advise mode and review by hand). A contact with a
 portal login sees their own loans under *My Loans*.
 
-Defaults — Enforce, Fixed, Weekly, employees only — reproduce the original
-behaviour exactly, so an existing client sees no change on upgrade.
+Defaults — Enforce, Fixed, Per Payslip (flat) on the Standard rule,
+employees only. On upgrade every existing rule is stamped with the figures
+the old Settings actually held, so a running deployment keeps its deal.
 
 ## Policy numbers are parameters, not code
 
@@ -132,9 +141,9 @@ none is a constant in code.
 | s.3 Minimum service | one year continuous | **Minimum Service** = `1.0` |
 | s.4 Ceiling | 1–2 yrs 50%, 3–4 yrs 100%, 5+ yrs 200% of monthly basic salary | three **Eligibility Bands**, floors with no gaps — 2½ years stays on the 1-year band |
 | s.4 Management may approve, reduce or deny | | endorse / approve / reject, plus the recorded administrator override |
-| s.5.1 Repayment | **₱1,000 per week** unless management approves otherwise | **Repayment Basis** = Fixed, **Period** = Weekly, **Default Repayment per Period** = `1000`; editable per loan |
-| s.5.2 Start | two weeks after proceeds are received | **Repayment Starts After** = `14` days |
-| s.5.3 Faster repayment on request | | weekly figure editable per loan, subject to approval |
+| s.5.1 Repayment | **₱1,000 per week** unless management approves otherwise | the repayment rule's **Repayment per Period** = `1000`; editable per loan |
+| s.5.2 Start | two weeks after proceeds are received | the repayment rule's **Repayment Starts After** = `14` days |
+| s.5.3 Faster repayment on request | | figure editable per loan, subject to approval; or a faster rule (e.g. the VIP double-instalment example) |
 | s.6 Written authorization | Labor Code art. 113 | the **Record Authorization** gate — nothing deducts without it |
 | s.7 Additional loan requests | *(cut off in the copy I was given)* | the optional rules — concurrent limit, settle-before-reborrow, cooling-off — are built and off; turn on whichever s.7 requires |
 

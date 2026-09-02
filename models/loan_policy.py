@@ -3,13 +3,17 @@
 
 Every figure the loan rules turn on is policy, not a property of the software:
 how long someone must have worked here, how much they may borrow, how many
-loans they may run at once, how fast they repay. A policy number that only
-exists in Python is a policy number nobody can change without a deploy.
+loans they may run at once. A policy number that only exists in Python is a
+policy number nobody can change without a deploy.
 
-All of it is set in **Loans > Configuration > Settings**, which writes
-``ir.config_parameter`` underneath. The loanable ceiling is the exception: its
-bands are records (``efs.loan.eligibility.tier``), because the *number* of
-bands is itself a policy choice and does not fit in one field.
+Eligibility, coverage and enforcement are set in **Loans > Configuration >
+Settings**, which writes ``ir.config_parameter`` underneath. Two things are
+records instead: the loanable ceiling's bands (``efs.loan.eligibility.tier``),
+because the *number* of bands is itself a policy choice; and everything
+repayment-shaped (instalment, percent, start delay, repayment cap, the
+deduction arithmetic), which lives on ``efs.loan.repayment.rule`` -- one
+record per deal, picked per application -- so different clients run
+different deals side by side.
 
 The constants below are fallbacks used only when a setting is missing or
 unreadable. They are chosen to fail **closed** — a broken configuration
@@ -49,19 +53,19 @@ PARAM_COUNT_EXISTING_DEBT = 'nihao_hr_loan.ceiling_counts_existing_debt'
 DEFAULT_COUNT_EXISTING_DEBT = False
 
 # ── Repayment ────────────────────────────────────────────────────────────────
+# The repayment figures are NOT settings any more: each repayment rule
+# (`efs.loan.repayment.rule`) carries its own instalment, percent, start
+# delay and repayment cap, and an application picks a rule. The constants
+# below are the last-resort fallbacks for a database with no rule at all.
 
-# The standard weekly instalment offered on a new application.
-PARAM_WEEKLY_REPAYMENT = 'nihao_hr_loan.weekly_repayment'
+# The standard instalment offered on a new application.
 DEFAULT_WEEKLY_REPAYMENT = 1000.0
 
 # Days after approval before the first deduction is taken.
-PARAM_START_DELAY_DAYS = 'nihao_hr_loan.repayment_start_delay_days'
 DEFAULT_START_DELAY_DAYS = 14
 
 # Ceiling on total loan repayments as a percentage of monthly basic salary,
-# across every active loan. 0 = no limit. Guards against someone being
-# approved into a wage they cannot live on.
-PARAM_MAX_REPAYMENT_PCT = 'nihao_hr_loan.max_repayment_percent'
+# across every active loan. 0 = no limit.
 DEFAULT_MAX_REPAYMENT_PCT = 0.0
 
 # 365.25 / 7 / 12. Used only to express a weekly figure per month for display;
@@ -114,21 +118,6 @@ def cooldown_days(env):
 
 def ceiling_counts_existing_debt(env):
     return _flag(env, PARAM_COUNT_EXISTING_DEBT, DEFAULT_COUNT_EXISTING_DEBT)
-
-
-def weekly_repayment(env):
-    value = _number(env, PARAM_WEEKLY_REPAYMENT, DEFAULT_WEEKLY_REPAYMENT)
-    # A zero weekly repayment would mean a loan that never repays, and the
-    # field is required to be positive anyway.
-    return value if value > 0 else DEFAULT_WEEKLY_REPAYMENT
-
-
-def start_delay_days(env):
-    return _number(env, PARAM_START_DELAY_DAYS, DEFAULT_START_DELAY_DAYS, int)
-
-
-def max_repayment_percent(env):
-    return _number(env, PARAM_MAX_REPAYMENT_PCT, DEFAULT_MAX_REPAYMENT_PCT)
 
 
 def ceiling_multiple(env, service_years, company=None):
@@ -193,41 +182,19 @@ def policy_enforcement(env):
 
 # Basis: `fixed` -- a peso figure per period (NihaoExpress: P1,000).
 #        `percent` -- a share of the PRINCIPAL per period (10% -> ~10 periods).
-# Period: `week` / `semimonth` / `month`. The deduction is prorated by the
-# days a payslip actually covers, so a setting means the same thing on any
-# payroll schedule. Both are company defaults; a loan product may override
-# them; the figure itself is stored on each loan.
-PARAM_REPAYMENT_BASIS = 'nihao_hr_loan.repayment_basis'
-PARAM_REPAYMENT_PERIOD = 'nihao_hr_loan.repayment_period'
-PARAM_REPAYMENT_AMOUNT = 'nihao_hr_loan.repayment_amount'
-PARAM_REPAYMENT_PERCENT = 'nihao_hr_loan.repayment_percent'
+# Period: 'payslip' is the flat option and the module default: the
+# instalment comes out of every payslip whole, whatever span of days the
+# slip covers -- no pro-rating; the repayment rule picked on the
+# application customises it. 'week' / 'semimonth' / 'month' prorate by the
+# days a payslip actually covers. Neither is a company setting: the module
+# defaults are fixed + payslip, and a loan product may override per
+# product; the figure itself is stored on each loan.
 DEFAULT_REPAYMENT_PERCENT = 10.0
 
-BASES = ('fixed', 'percent')
-# 'payslip' is the flat option: the instalment comes out of every payslip
-# whole, whatever span of days the slip covers -- no pro-rating. Its
-# schedule (how many instalments have fallen due by a given date) and its
-# calendar-equivalent maths (term, interest, the monthly capacity check)
-# follow the CUTOFF CADENCE setting below, because a flat per-payslip
-# figure has no calendar of its own -- the payroll's cutoff calendar is
-# its calendar.
-PERIODS = ('week', 'semimonth', 'month', 'payslip')
 # 'payslip' has no row here: its day-length and per-month figures follow the
 # cutoff cadence setting -- see Loan._period_days / _periods_per_month.
 PERIOD_DAYS = {'week': 7.0, 'semimonth': 365.25 / 24, 'month': 365.25 / 12}
 PERIODS_PER_MONTH = {'week': WEEKS_PER_MONTH, 'semimonth': 2.0, 'month': 1.0}
-PERIOD_LABELS = {'week': 'Weekly', 'semimonth': 'Semi-monthly',
-                 'month': 'Monthly', 'payslip': 'Per Payslip (flat)'}
-
-
-def repayment_basis(env):
-    raw = str(_raw(env, PARAM_REPAYMENT_BASIS, 'fixed') or '').strip().lower()
-    return raw if raw in BASES else 'fixed'
-
-
-def repayment_period(env):
-    raw = str(_raw(env, PARAM_REPAYMENT_PERIOD, 'week') or '').strip().lower()
-    return raw if raw in PERIODS else 'week'
 
 
 # ── The payroll's cutoff calendar, for flat (per-payslip) loans ──────────────
@@ -245,26 +212,6 @@ def payslip_cadence(env):
     raw = str(_raw(env, PARAM_PAYSLIP_CADENCE,
                    DEFAULT_PAYSLIP_CADENCE) or '').strip().lower()
     return raw if raw in CADENCES else DEFAULT_PAYSLIP_CADENCE
-
-
-# The repayment rule offered on a new application (efs.loan.repayment.rule
-# id). The rules catalogue (Loans > Configuration > Repayment Rules) is the
-# one customisation layer for the flat deduction; empty means new loans
-# start with no rule and run the built-in figure.
-PARAM_DEFAULT_REPAYMENT_RULE = 'nihao_hr_loan.default_repayment_rule_id'
-
-
-def repayment_amount(env):
-    """The default fixed instalment. Falls back to the pre-1.1 key."""
-    value = _number(env, PARAM_REPAYMENT_AMOUNT, 0.0)
-    if value <= 0:
-        value = _number(env, PARAM_WEEKLY_REPAYMENT, DEFAULT_WEEKLY_REPAYMENT)
-    return value if value > 0 else DEFAULT_WEEKLY_REPAYMENT
-
-
-def repayment_percent(env):
-    value = _number(env, PARAM_REPAYMENT_PERCENT, DEFAULT_REPAYMENT_PERCENT)
-    return value if value > 0 else DEFAULT_REPAYMENT_PERCENT
 
 
 # ── External borrowers ───────────────────────────────────────────────────────

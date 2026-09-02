@@ -135,10 +135,11 @@ class Loan(models.Model):
         'efs.loan.repayment.rule', string='Repayment Rule', index=True,
         tracking=True, ondelete='restrict',
         default=lambda self: self._default_repayment_rule(),
-        help='The arithmetic deciding what each payslip deducts for a flat '
-             '(per-payslip) loan -- picked at application time, like a '
-             'salary rule. Flat loans sharing a rule share its instalment. '
-             'Empty runs the built-in figure and the company Settings.')
+        help='The deal this loan runs under: the arithmetic deciding what '
+             'each payslip deducts for a flat (per-payslip) loan, plus its '
+             'figures (instalment, start delay, repayment cap) -- picked at '
+             'application time, like a salary rule. Flat loans sharing a '
+             'rule share its instalment. Empty runs the built-in figure.')
 
     term_periods = fields.Integer(
         string='Term (periods)', compute='_compute_amortization', store=True,
@@ -265,36 +266,50 @@ class Loan(models.Model):
     ]
 
     # ── Defaults ────────────────────────────────────────────────────────────
+    # Everything repayment-shaped defaults from the Repayment Rules
+    # catalogue: the first active rule (by sequence) is the standing offer,
+    # and its figures land on the application. There is no company-wide
+    # repayment Setting any more -- a deployment that wants a different
+    # standing offer reorders or edits the rules.
 
     @api.model
     def _default_repayment_basis(self):
-        return loan_policy.repayment_basis(self.env)
+        return 'fixed'
 
     @api.model
     def _default_repayment_period(self):
-        return loan_policy.repayment_period(self.env)
-
-    @api.model
-    def _default_repayment_percent(self):
-        return loan_policy.repayment_percent(self.env)
+        # Flat per payslip is the house semantics; the rules catalogue is
+        # its customisation layer. A loan product may still override.
+        return 'payslip'
 
     @api.model
     def _default_repayment_rule(self):
-        rule_id = self.env['ir.config_parameter'].sudo().get_param(
-            loan_policy.PARAM_DEFAULT_REPAYMENT_RULE)
-        try:
-            rule = self.env['efs.loan.repayment.rule'].browse(
-                int(rule_id or 0))
-        except (TypeError, ValueError):
-            return False
-        return rule if rule.exists() else False
+        return self.env['efs.loan.repayment.rule'].search(
+            [], order='sequence, id', limit=1)
 
     @api.model
+    def _default_repayment_percent(self):
+        rule = self._default_repayment_rule()
+        return rule.percent or loan_policy.DEFAULT_REPAYMENT_PERCENT
+
+    def _rule_for_defaults(self):
+        """The rule whose figures govern this loan: its own, else the
+        catalogue's standing offer."""
+        rule = self[:1].repayment_rule_id if self else False
+        return rule or self._default_repayment_rule()
+
     def _default_start_date(self, approved_on=None):
-        """Handbook section 5.2: N days after the proceeds are received."""
+        """Handbook section 5.2: N days after the proceeds are received.
+
+        The delay is the rule's ``start_delay_days`` -- part of the deal,
+        like its instalment.
+        """
         base = (fields.Date.to_date(approved_on)
                 or fields.Date.context_today(self))
-        return base + timedelta(days=loan_policy.start_delay_days(self.env))
+        rule = self._rule_for_defaults()
+        days = (rule.start_delay_days if rule
+                else loan_policy.DEFAULT_START_DELAY_DAYS)
+        return base + timedelta(days=days)
 
     @api.onchange('loan_type_id')
     def _onchange_loan_type_id(self):
@@ -308,17 +323,40 @@ class Loan(models.Model):
             product = rec.loan_type_id
             if not product:
                 continue
+            rule = rec._rule_for_defaults()
+            default_pct = (rule.percent if rule
+                           else loan_policy.DEFAULT_REPAYMENT_PERCENT)
+            default_amt = (rule.amount if rule
+                           else loan_policy.DEFAULT_WEEKLY_REPAYMENT)
             if product.repayment_basis != 'default':
                 rec.repayment_basis = product.repayment_basis
             if product.repayment_period != 'default':
                 rec.repayment_period = product.repayment_period
             if product.default_repayment_percent and \
-                    rec.repayment_percent == loan_policy.repayment_percent(rec.env):
+                    rec.repayment_percent == default_pct:
                 rec.repayment_percent = product.default_repayment_percent
             if product.default_repayment_amount and rec.repayment_basis == 'fixed' \
-                    and (not rec.repayment_amount or rec.repayment_amount
-                         == loan_policy.repayment_amount(rec.env)):
+                    and (not rec.repayment_amount
+                         or rec.repayment_amount == default_amt):
                 rec.repayment_amount = product.default_repayment_amount
+
+    @api.onchange('repayment_rule_id')
+    def _onchange_repayment_rule_id(self):
+        """Picking a rule is picking the deal: its figures land on the form.
+
+        Deliberately overwrites what is on the screen -- switching from the
+        Standard rule to a VIP rule is supposed to re-price the draft. A
+        figure typed *after* the rule is chosen stays, because nothing
+        fires again.
+        """
+        for rec in self:
+            rule = rec.repayment_rule_id
+            if not rule:
+                continue
+            if rule.percent:
+                rec.repayment_percent = rule.percent
+            if rule.amount and rec.repayment_basis == 'fixed':
+                rec.repayment_amount = rule.amount
 
     # ── Computes ────────────────────────────────────────────────────────────
 
@@ -352,14 +390,16 @@ class Loan(models.Model):
 
         Percent basis: always the principal times the percent -- raising the
         principal raises the instalment. Fixed basis: whatever was typed, or
-        the company default when nothing has been.
+        the rule's figure when nothing has been.
         """
         for rec in self:
             if rec.repayment_basis == 'percent':
                 pct = rec.repayment_percent or 0.0
                 rec.repayment_amount = round((rec.amount or 0.0) * pct / 100.0, 2)
             elif not rec.repayment_amount:
-                rec.repayment_amount = loan_policy.repayment_amount(self.env)
+                rule = rec._rule_for_defaults()
+                rec.repayment_amount = ((rule.amount if rule else 0.0)
+                                        or loan_policy.DEFAULT_WEEKLY_REPAYMENT)
 
     def _period_days(self):
         self.ensure_one()
@@ -736,13 +776,17 @@ class Loan(models.Model):
 
         Off by default. Turned on, it sums the instalment of every active loan
         plus this application, expresses it per month, and refuses if that
-        exceeds the configured share of monthly basic salary.
+        exceeds the allowed share of monthly basic salary. The share is the
+        repayment rule's ``max_repayment_percent`` -- part of the deal being
+        applied for, so different deals carry different protections.
 
         This is the rule a ceiling cannot express: a modest loan repaid very
         fast takes more out of a payslip than a large one repaid slowly.
         """
         self.ensure_one()
-        percent = loan_policy.max_repayment_percent(self.env)
+        rule = self._rule_for_defaults()
+        percent = (rule.max_repayment_percent if rule
+                   else loan_policy.DEFAULT_MAX_REPAYMENT_PCT)
         if not percent:
             return None
         employee = self._policy_employee()

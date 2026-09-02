@@ -11,10 +11,10 @@
         `noupdate="1"` means an upgrade never overwrites a figure somebody set.
 
         The rules NOT seeded here — maximum concurrent loans, settle before
-        reborrowing, cooling-off, ceiling-includes-debt, maximum repayment
-        percentage — are deliberately absent, which reads as off. A policy that
-        switched itself on during an upgrade would start refusing applications
-        that were fine the day before, and nobody would connect the two.
+        reborrowing, cooling-off, ceiling-includes-debt — are deliberately
+        absent, which reads as off. A policy that switched itself on during an
+        upgrade would start refusing applications that were fine the day
+        before, and nobody would connect the two.
 
         The loanable ceiling is not here at all: its bands are records, in
         data/loan_tiers.xml, because how many bands you run is itself a policy
@@ -28,17 +28,11 @@
             <field name="value">1.0</field>
         </record>
 
-        <!-- The standard weekly instalment offered on a new application. -->
-        <record id="param_loan_weekly_repayment" model="ir.config_parameter">
-            <field name="key">nihao_hr_loan.weekly_repayment</field>
-            <field name="value">1000.0</field>
-        </record>
-
-        <!-- Days between approval and the first deduction. -->
-        <record id="param_loan_start_delay_days" model="ir.config_parameter">
-            <field name="key">nihao_hr_loan.repayment_start_delay_days</field>
-            <field name="value">14</field>
-        </record>
+        <!--
+            The repayment figures (instalment, start delay, repayment cap,
+            percent) are no longer parameters: they live on each
+            efs.loan.repayment.rule record; see data/loan_repayment_rules.xml.
+        -->
 
     </data>
 </odoo>

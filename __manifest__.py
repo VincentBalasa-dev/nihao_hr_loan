@@ -15,10 +15,12 @@ construction, appliance, business -- from Configuration instead of editing
 Python. Each product decides how its interest is worked out: none, flat,
 diminishing balance, or a Python formula evaluated the way a salary rule's is.
 
-Policy numbers from the employee handbook (the weekly repayment, the minimum
-service period, the loanable ceiling by length of service, the two-week delay
-before repayment starts) are system parameters, not constants -- see
-data/loan_parameters.xml.
+Policy numbers from the employee handbook are configuration, not constants.
+Eligibility and coverage (minimum service, loanable ceiling by length of
+service) are settings and tier records; everything repayment-shaped (the
+instalment, the delay before repayment starts, the repayment cap, and the
+deduction arithmetic itself) lives on the Repayment Rules catalogue -- one
+record per deal, picked per application, salary-rule style.
 
 **Payroll.** The deduction arithmetic lives on `hr.employee` -- "what does
 this person give up for a period running from A to B" -- as a pure function of
@@ -38,7 +40,7 @@ migration.
     # construct here is 18-form: `_sql_constraints` lists rather than
     # `models.Constraint`, `groups_id` rather than `group_ids`, and
     # `safe_eval(..., nocopy=True)` because 18 still copies the context.
-    'version': '18.0.1.2.16',
+    'version': '18.0.1.3.0',
     'category': 'Human Resources',
     'author': 'NihaoExpress',
     'website': 'https://odoo-demo.auditninjaz.com',

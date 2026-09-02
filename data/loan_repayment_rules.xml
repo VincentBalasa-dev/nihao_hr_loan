@@ -44,10 +44,13 @@ if 0.005 &lt; balance - result &lt; per:
     result = balance</field>
         </record>
 
-        <!-- New applications start on the standard rule. -->
-        <record id="param_default_repayment_rule" model="ir.config_parameter">
-            <field name="key">nihao_hr_loan.default_repayment_rule_id</field>
-            <field name="value" eval="str(ref('repayment_rule_standard'))"/>
-        </record>
+        <!--
+            No default-rule parameter: new applications are offered the
+            first active rule by sequence, so the catalogue's own order
+            (the drag handle in the list) IS the default. Each rule also
+            carries its own figures (amount, percent, start_delay_days,
+            max_repayment_percent); the seeds above take the field
+            defaults: 1,000.00 / 10% / 14 days / no cap.
+        -->
     </data>
 </odoo>
